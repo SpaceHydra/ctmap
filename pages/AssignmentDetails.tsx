@@ -54,6 +54,10 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
   // Form States
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docCategory, setDocCategory] = useState('Sale Deed');
+
+  // Bulk upload state
+  const [bulkFiles, setBulkFiles] = useState<Array<{ file: File; category: string }>>([]);
+  const [isDragging, setIsDragging] = useState(false);
   
   // Allocation States
   const [allocationStrategy, setAllocationStrategy] = useState<'property' | 'borrower' | 'hub'>('property');
@@ -179,6 +183,75 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
     if (!docFile) return;
     store.uploadDocuments(assignment.id, [{ name: docFile.name, category: docCategory }], currentUser.id);
     setDocFile(null);
+    refresh();
+  };
+
+  // Auto-categorize documents based on filename
+  const autoCategorize = (filename: string): string => {
+    const lower = filename.toLowerCase();
+    if (lower.includes('sale') || lower.includes('deed')) return 'Sale Deed';
+    if (lower.includes('index') || lower.includes('ii')) return 'Index II';
+    if (lower.includes('ec') || lower.includes('encumbrance')) return 'EC Certificate';
+    if (lower.includes('title') || lower.includes('search')) return 'Title Search Report';
+    if (lower.includes('tax') || lower.includes('receipt')) return 'Tax Receipt';
+    if (lower.includes('noc') || lower.includes('clearance')) return 'NOC';
+    if (lower.includes('plan') || lower.includes('survey')) return 'Survey Plan';
+    if (lower.includes('photo') || lower.includes('image')) return 'Property Photos';
+    return 'Sale Deed'; // Default
+  };
+
+  // Handle bulk file selection
+  const handleBulkFileSelect = (files: FileList | null) => {
+    if (!files) return;
+
+    const newFiles = Array.from(files).map(file => ({
+      file,
+      category: autoCategorize(file.name)
+    }));
+
+    setBulkFiles(prev => [...prev, ...newFiles]);
+  };
+
+  // Handle drag and drop
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleBulkFileSelect(e.dataTransfer.files);
+  };
+
+  // Remove file from bulk upload list
+  const handleRemoveBulkFile = (index: number) => {
+    setBulkFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Update category for a bulk file
+  const handleUpdateBulkCategory = (index: number, category: string) => {
+    setBulkFiles(prev => prev.map((item, i) =>
+      i === index ? { ...item, category } : item
+    ));
+  };
+
+  // Upload all bulk files
+  const handleBulkUpload = () => {
+    if (bulkFiles.length === 0) return;
+
+    const docs = bulkFiles.map(({ file, category }) => ({
+      name: file.name,
+      category
+    }));
+
+    store.uploadDocuments(assignment.id, docs, currentUser.id);
+    setBulkFiles([]);
     refresh();
   };
 
@@ -545,29 +618,108 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
           </div>
         )}
 
-        {/* TAB: DOCUMENTS (Legacy) */}
+        {/* TAB: DOCUMENTS */}
         {!isOps && activeTab === 'docs' && (
           <div className="space-y-8">
             {canEditDocs && (
-                <div className="bg-slate-50 p-8 rounded-xl border border-slate-200">
-                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-6 flex items-center gap-2">Upload New Document</h3>
-                    <form onSubmit={handleUpload} className="flex flex-col md:flex-row gap-6 items-end">
-                        <div className="flex-1 w-full">
-                            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">Select File</label>
-                            <input type="file" onChange={(e) => setDocFile(e.target.files?.[0] || null)} className="block w-full text-sm text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-lg file:border-slate-300 file:border file:bg-white bg-white border border-slate-200 rounded-lg" />
+                <div className="bg-gradient-to-br from-slate-50 to-blue-50 p-8 rounded-xl border-2 border-blue-200">
+                    <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      <Upload className="w-4 h-4" />
+                      Bulk Document Upload
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-6">Drag & drop multiple files or click to browse. Files will be auto-categorized.</p>
+
+                    {/* Drag and Drop Zone */}
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`relative border-2 border-dashed rounded-xl p-8 transition-all ${
+                        isDragging
+                          ? 'border-brand-500 bg-brand-50'
+                          : 'border-slate-300 bg-white hover:border-brand-400'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragging ? 'text-brand-600' : 'text-slate-400'}`} />
+                        <p className="text-sm font-semibold text-slate-700 mb-1">
+                          {isDragging ? 'Drop files here...' : 'Drag & drop files here'}
+                        </p>
+                        <p className="text-xs text-slate-500 mb-4">or click below to browse</p>
+                        <label className="inline-block px-6 py-2 bg-white border-2 border-brand-600 text-brand-600 rounded-lg font-semibold hover:bg-brand-50 cursor-pointer transition-colors">
+                          <input
+                            type="file"
+                            multiple
+                            onChange={(e) => handleBulkFileSelect(e.target.files)}
+                            className="hidden"
+                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                          />
+                          Choose Files
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* File List */}
+                    {bulkFiles.length > 0 && (
+                      <div className="mt-6 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-slate-700">Files to Upload ({bulkFiles.length})</h4>
+                          <button
+                            onClick={() => setBulkFiles([])}
+                            className="text-xs text-slate-500 hover:text-slate-700"
+                          >
+                            Clear All
+                          </button>
                         </div>
-                        <div className="w-full md:w-1/3">
-                            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">Category</label>
-                            <select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} className="block w-full rounded-lg border-slate-200 shadow-sm py-3 bg-white text-slate-900 font-medium">
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {bulkFiles.map((item, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center gap-3 p-3 bg-white rounded-lg border border-slate-200"
+                            >
+                              <FileIcon className="w-5 h-5 text-brand-600 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-900 truncate">{item.file.name}</p>
+                                <p className="text-xs text-slate-500">{(item.file.size / 1024).toFixed(1)} KB</p>
+                              </div>
+                              <select
+                                value={item.category}
+                                onChange={(e) => handleUpdateBulkCategory(index, e.target.value)}
+                                className="text-xs border border-slate-200 rounded px-2 py-1 font-medium"
+                              >
                                 <option value="Sale Deed">Sale Deed</option>
                                 <option value="Index II">Index II</option>
-                            </select>
+                                <option value="EC Certificate">EC Certificate</option>
+                                <option value="Title Search Report">Title Search Report</option>
+                                <option value="Tax Receipt">Tax Receipt</option>
+                                <option value="NOC">NOC</option>
+                                <option value="Survey Plan">Survey Plan</option>
+                                <option value="Property Photos">Property Photos</option>
+                              </select>
+                              <button
+                                onClick={() => handleRemoveBulkFile(index)}
+                                className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                        <button type="submit" disabled={!docFile} className="w-full md:w-auto px-8 py-3 bg-brand-600 text-white rounded-lg font-semibold shadow-md hover:bg-brand-700 disabled:bg-slate-300 flex items-center justify-center gap-2"><Upload className="w-4 h-4" /> Upload</button>
-                    </form>
+                        <button
+                          onClick={handleBulkUpload}
+                          className="w-full px-6 py-3 bg-brand-600 text-white rounded-lg font-semibold shadow-md hover:bg-brand-700 flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <Upload className="w-5 h-5" />
+                          Upload {bulkFiles.length} File{bulkFiles.length > 1 ? 's' : ''}
+                        </button>
+                      </div>
+                    )}
+
                     {canEditDocs && assignment.status === AssignmentStatus.DRAFT && assignment.documents.length > 0 && (
                         <div className="mt-6 pt-6 border-t border-slate-200 flex justify-end">
-                             <button onClick={handleSubmitForAllocation} className="text-brand-600 font-bold text-sm hover:text-brand-800 flex items-center gap-1.5 px-4 py-2 hover:bg-brand-50 rounded-lg">Finish Uploading & Submit <ArrowLeft className="w-4 h-4 rotate-180" /></button>
+                             <button onClick={handleSubmitForAllocation} className="text-brand-600 font-bold text-sm hover:text-brand-800 flex items-center gap-1.5 px-4 py-2 hover:bg-brand-50 rounded-lg transition-colors">
+                               Finish Uploading & Submit <ArrowLeft className="w-4 h-4 rotate-180" />
+                             </button>
                         </div>
                     )}
                 </div>

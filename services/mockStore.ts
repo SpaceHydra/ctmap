@@ -639,13 +639,16 @@ class MockStore {
   }> {
     const assignment = this.assignments.find(a => a.id === assignmentId);
     if (!assignment) {
+      console.error(`❌ Assignment ${assignmentId} not found`);
       return { success: false, reason: 'Assignment not found' };
     }
 
     if (assignment.status !== AssignmentStatus.PENDING_ALLOCATION) {
+      console.error(`❌ Assignment ${assignmentId} not in PENDING_ALLOCATION (status: ${assignment.status})`);
       return { success: false, reason: 'Assignment not in PENDING_ALLOCATION status' };
     }
 
+    console.log(`🤖 AI allocating ${assignment.lan} (${assignmentId})...`);
     const advocates = this.getAdvocates();
     const result = await geminiAllocationService.allocateWithAI(
       assignment,
@@ -655,14 +658,30 @@ class MockStore {
 
     if (result.success && result.advocateId) {
       try {
+        console.log(`✅ AI selected advocate ${result.advocateId} for ${assignment.lan}`);
         this.allocateAdvocate(
           assignmentId,
           result.advocateId,
           `AI-allocated by Gemini (confidence: ${result.confidence}/10) - ${result.reason}`
         );
-      } catch (error) {
-        return { success: false, reason: `Allocation failed: ${error}` };
+
+        // Verify allocation succeeded
+        const updated = this.getAssignmentById(assignmentId);
+        if (updated?.status !== AssignmentStatus.ALLOCATED) {
+          console.error(`❌ Allocation verification failed for ${assignment.lan}`);
+          return { success: false, reason: 'Allocation verification failed' };
+        }
+
+        console.log(`✅ Successfully allocated ${assignment.lan} to advocate ${result.advocateId}`);
+        return result;
+      } catch (error: any) {
+        console.error(`❌ Allocation error for ${assignment.lan}:`, error);
+        return { success: false, reason: `Allocation failed: ${error.message || error}` };
       }
+    }
+
+    if (!result.success) {
+      console.warn(`⚠️ AI could not allocate ${assignment.lan}: ${result.reason}`);
     }
 
     return result;
