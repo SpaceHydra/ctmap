@@ -30,6 +30,12 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
   const [showBulkAllocate, setShowBulkAllocate] = useState(false);
   const [selectedAdvocate, setSelectedAdvocate] = useState<string>('');
 
+  // AI allocation state
+  const [showAIProgress, setShowAIProgress] = useState(false);
+  const [aiProgress, setAIProgress] = useState({ current: 0, total: 0, assignment: '' });
+  const [isTestDataLoaded, setIsTestDataLoaded] = useState(false);
+  const [geminiAvailable, setGeminiAvailable] = useState(false);
+
   useEffect(() => {
     setIsLoading(true);
     setTimeout(() => {
@@ -43,12 +49,16 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
 
     // Calculate Throughput
     const today = new Date().toISOString().split('T')[0];
-    const completedToday = all.filter(a => 
-        a.status === AssignmentStatus.COMPLETED && 
-        a.completedAt && 
+    const completedToday = all.filter(a =>
+        a.status === AssignmentStatus.COMPLETED &&
+        a.completedAt &&
         a.completedAt.startsWith(today)
     ).length;
     setThroughput(completedToday);
+
+    // Check test data and Gemini availability
+    setIsTestDataLoaded(store.isTestDataLoaded());
+    setGeminiAvailable(store.isGeminiAvailable());
 
     setIsLoading(false);
     }, 600);
@@ -159,6 +169,103 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
     }
   };
 
+  const handleLoadTestData = () => {
+    const confirmed = window.confirm(
+      `🧪 Load Test Dataset?\n\n` +
+      `This will load:\n` +
+      `• 65 pending assignments\n` +
+      `• 25 advocates across 10 cities\n` +
+      `• 10 bank hubs\n\n` +
+      `Perfect for testing AI allocation!\n\n` +
+      `⚠️ This will replace your current data.\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      store.loadTestData();
+      setIsTestDataLoaded(true);
+
+      // Refresh data
+      const all = store.getAssignments();
+      setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
+
+      alert(
+        `✅ Test Dataset Loaded!\n\n` +
+        `📊 Assignments: 65\n` +
+        `👥 Advocates: 25\n` +
+        `🏢 Hubs: 10\n\n` +
+        `Ready for AI allocation testing!`
+      );
+    } catch (error) {
+      alert('❌ Failed to load test data. Please try again.');
+    }
+  };
+
+  const handleGeminiAllocateAll = async () => {
+    if (!geminiAvailable) {
+      alert(
+        `❌ Gemini AI Not Configured\n\n` +
+        `To use AI allocation:\n` +
+        `1. Get your API key from: https://makersuite.google.com/app/apikey\n` +
+        `2. Create a .env file in the project root\n` +
+        `3. Add: VITE_GEMINI_API_KEY=your_api_key_here\n` +
+        `4. Restart the dev server`
+      );
+      return;
+    }
+
+    const pendingCount = assignments.filter(a => a.status === AssignmentStatus.PENDING_ALLOCATION).length;
+
+    if (pendingCount === 0) {
+      alert('⚠️ No assignments pending allocation');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `🤖 AI Auto-Allocate ${pendingCount} Assignments using Gemini?\n\n` +
+      `Gemini AI will:\n` +
+      `• Analyze each assignment's location, product type, and priority\n` +
+      `• Match with best-fit advocates based on expertise\n` +
+      `• Balance workload across the advocate network\n` +
+      `• Provide confidence scores and reasoning\n\n` +
+      `⏱️ This will take ~${Math.ceil(pendingCount / 60)} minute(s)\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setShowAIProgress(true);
+      setAIProgress({ current: 0, total: pendingCount, assignment: '' });
+
+      const result = await store.geminiAllocateAll((current, total, assignment) => {
+        setAIProgress({ current, total, assignment: assignment || '' });
+      });
+
+      setShowAIProgress(false);
+
+      // Refresh data
+      const all = store.getAssignments();
+      setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
+
+      alert(
+        `✅ Gemini AI Allocation Complete!\n\n` +
+        `Total: ${result.total}\n` +
+        `✅ Successful: ${result.successful}\n` +
+        `❌ Failed: ${result.failed}\n\n` +
+        (result.failed > 0
+          ? `Some failures occurred. Check audit trail for details.`
+          : `All assignments successfully allocated by AI!`)
+      );
+
+    } catch (error: any) {
+      setShowAIProgress(false);
+      alert(`❌ AI allocation failed: ${error.message || 'Unknown error'}`);
+    }
+  };
+
   // Get unique values for quick filters
   const uniqueStates = [...new Set(assignments.map(a => a.state))];
   const uniqueProducts = [...new Set(assignments.map(a => a.productType))];
@@ -208,15 +315,35 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Operational Command Center</h2>
           <p className="text-slate-500 mt-1">Real-time pipeline monitoring and management</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleAutoAllocateAll}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-purple-200 bg-purple-600 text-white font-semibold text-sm hover:bg-purple-700 hover:border-purple-300 transition-all shadow-lg shadow-purple-200"
-            title="Automatically allocate all pending assignments using smart matching"
-          >
-            <Zap className="w-4 h-4" />
-            Auto-Allocate All
-          </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {!isTestDataLoaded && (
+            <button
+              onClick={handleLoadTestData}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-amber-200 bg-amber-500 text-white font-semibold text-xs hover:bg-amber-600 transition-all"
+              title="Load 65 assignments + 25 advocates for testing"
+            >
+              🧪 Load Test Data
+            </button>
+          )}
+          {geminiAvailable ? (
+            <button
+              onClick={handleGeminiAllocateAll}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-emerald-200 bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+              title="Use Gemini AI to intelligently allocate assignments"
+            >
+              <Zap className="w-4 h-4" />
+              🤖 AI Allocate All
+            </button>
+          ) : (
+            <button
+              onClick={handleAutoAllocateAll}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-purple-200 bg-purple-600 text-white font-semibold text-sm hover:bg-purple-700 hover:border-purple-300 transition-all shadow-lg shadow-purple-200"
+              title="Automatically allocate all pending assignments using smart matching"
+            >
+              <Zap className="w-4 h-4" />
+              Auto-Allocate All
+            </button>
+          )}
           <button
             onClick={() => {
               setBulkMode(!bulkMode);
@@ -231,7 +358,7 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
             <CheckSquare className="w-4 h-4" />
             {bulkMode ? 'Exit Bulk Mode' : 'Bulk Allocate'}
           </button>
-          <div className="hidden md:flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
+          <div className="hidden lg:flex items-center gap-3 bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
             <TrendingUp className="w-5 h-5 text-emerald-500" />
             <div>
               <p className="text-xs text-slate-500 font-medium">System Health</p>
@@ -628,6 +755,47 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                     Allocate All
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Progress Dialog */}
+      {showAIProgress && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[70]">
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-emerald-200 p-8 max-w-md mx-4">
+            <div className="text-center">
+              <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-emerald-100 to-green-100 flex items-center justify-center mb-4 animate-pulse">
+                <Zap className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">
+                🤖 Gemini AI is allocating...
+              </h3>
+              <p className="text-slate-600 text-sm mb-6">
+                Processing assignment {aiProgress.assignment}
+              </p>
+
+              <div className="mb-4">
+                <div className="flex justify-between text-sm font-medium text-slate-700 mb-2">
+                  <span>Progress</span>
+                  <span>{aiProgress.current} / {aiProgress.total}</span>
+                </div>
+                <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-green-500 transition-all duration-500"
+                    style={{ width: `${(aiProgress.current / aiProgress.total) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  {Math.round((aiProgress.current / aiProgress.total) * 100)}% complete
+                </p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-900">
+                  <strong>Please wait...</strong> AI is analyzing each assignment and matching with the best advocate based on location, expertise, and workload.
+                </p>
               </div>
             </div>
           </div>
