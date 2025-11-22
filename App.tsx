@@ -12,6 +12,9 @@ import { OpsDashboard } from './pages/OpsDashboard';
 import { AdvocateDashboard } from './pages/AdvocateDashboard';
 import { AssignmentDetails } from './pages/AssignmentDetails';
 import { MasterManagement } from './pages/MasterManagement';
+import { Reports } from './pages/Reports';
+import { ActionRequired } from './pages/ActionRequired';
+import { AdvocateNetwork } from './pages/AdvocateNetwork';
 
 const App: React.FC = () => {
   // Mock Auth State
@@ -54,6 +57,7 @@ const App: React.FC = () => {
         );
     }
 
+    // Handle specific module routes
     if (activeModule === 'masters' && user.role === UserRole.CT_OPS) {
         return (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -62,6 +66,31 @@ const App: React.FC = () => {
         );
     }
 
+    if (activeModule === 'reports') {
+        return (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <Reports user={user} />
+          </div>
+        );
+    }
+
+    if (activeModule === 'actions' && user.role === UserRole.BANK_USER) {
+        return (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <ActionRequired user={user} onSelectAssignment={setSelectedAssignmentId} />
+          </div>
+        );
+    }
+
+    if (activeModule === 'advocates' && user.role === UserRole.CT_OPS) {
+        return (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <AdvocateNetwork />
+          </div>
+        );
+    }
+
+    // Default dashboard routes by role
     switch (user.role) {
       case UserRole.BANK_USER:
         return <BankDashboard user={user} onSelectAssignment={setSelectedAssignmentId} initialView={activeModule === 'fetch' ? 'claim-form' : 'dashboard'} />;
