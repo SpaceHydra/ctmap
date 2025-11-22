@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User, Assignment, AssignmentStatus } from '../types';
 import { store } from '../services/mockStore';
-import { Search, Upload, AlertCircle, CheckCircle, Clock, ArrowRight, Info, FileText, Save, ChevronLeft, Briefcase, Activity, PieChart as PieIcon, RefreshCw, UserCheck, XCircle } from 'lucide-react';
+import { Search, Upload, AlertCircle, CheckCircle, Clock, ArrowRight, Info, FileText, Save, ChevronLeft, Briefcase, Activity, PieChart as PieIcon, RefreshCw, UserCheck, XCircle, Loader2 } from 'lucide-react';
 import { StatsCard } from '../components/StatsCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { TableSkeleton } from '../components/LoadingSkeleton';
 
 interface Props {
   user: User;
@@ -43,6 +44,8 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docCategory, setDocCategory] = useState('Sale Deed');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [searchDebounceTimer, setSearchDebounceTimer] = useState<NodeJS.Timeout | null>(null);
 
   // Refresh My Assignments
   const refreshMyList = () => {
@@ -66,22 +69,55 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
   };
 
   useEffect(() => {
-    refreshMyList();
+    setIsLoadingDashboard(true);
+    // Simulate loading for better UX
+    setTimeout(() => {
+      refreshMyList();
+      setIsLoadingDashboard(false);
+    }, 600);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
 
   // Handlers
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    performSearch();
+  };
+
+  const performSearch = useCallback(() => {
+    if (!searchQuery.trim()) return;
+
     setIsSearching(true);
     setHasSearched(true);
-    
-    // Simulate API delay
+
+    // Simulate API delay with realistic timing
     setTimeout(() => {
       const results = store.searchAssignments(searchQuery);
       setSearchResults(results);
       setIsSearching(false);
-    }, 500);
+    }, 400);
+  }, [searchQuery]);
+
+  // Debounced search on input change
+  const handleSearchInputChange = (value: string) => {
+    setSearchQuery(value);
+
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+
+    if (!value.trim()) {
+      setHasSearched(false);
+      setSearchResults([]);
+      return;
+    }
+
+    // Auto-search after 500ms of no typing
+    const timer = setTimeout(() => {
+      performSearch();
+    }, 800);
+
+    setSearchDebounceTimer(timer);
   };
 
   const handleSelectForClaim = (assignment: Assignment) => {
@@ -268,25 +304,35 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-end gap-4 pt-4 border-t border-slate-100">
-              <button 
+              <button
                 onClick={() => handleClaimProcess('draft')}
                 disabled={isSubmitting}
-                className="w-full sm:w-auto px-6 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200 transition-all flex items-center justify-center gap-2 shadow-sm"
+                className="w-full sm:w-auto px-6 py-3 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Save className="w-4 h-4" /> Save as Draft
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save as Draft
               </button>
-              
-              <button 
+
+              <button
                 onClick={() => handleClaimProcess('submit')}
                 disabled={!docFile || isSubmitting}
                 className={`w-full sm:w-auto px-8 py-3 rounded-lg font-semibold text-white shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all flex items-center justify-center gap-2
-                  ${!docFile || isSubmitting 
-                    ? 'bg-slate-300 cursor-not-allowed shadow-none' 
+                  ${!docFile || isSubmitting
+                    ? 'bg-slate-300 cursor-not-allowed shadow-none'
                     : 'bg-brand-600 hover:bg-brand-700 shadow-brand-500/25 hover:shadow-lg active:scale-95'
                   }`}
               >
-                {isSubmitting ? 'Processing...' : 'Upload & Submit'}
-                {!isSubmitting && <ArrowRight className="w-4 h-4" />}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Upload & Submit
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </div>
             {!docFile && (
@@ -301,8 +347,29 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
   }
 
   // -- VIEW 2: DASHBOARD (SEARCH & LIST) --
+  if (isLoadingDashboard) {
+    return (
+      <div className="space-y-8 pb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <div key={idx} className="animate-pulse">
+              <div className="bg-white p-6 rounded-xl shadow-soft border border-slate-200">
+                <div className="h-4 bg-slate-200 rounded w-1/2 mb-4"></div>
+                <div className="h-8 bg-slate-200 rounded w-1/3"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="bg-white p-8 rounded-2xl shadow-soft border border-slate-200">
+          <div className="h-6 bg-slate-200 rounded w-1/4 mb-6"></div>
+          <TableSkeleton rows={5} />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-8 pb-12 animate-in fade-in duration-500">
       
       {/* Transfer Request Notification Panel */}
       {transferRequests.length > 0 && (
@@ -358,28 +425,41 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
             <input 
               id="assignment-search-input"
               type="text" 
-              placeholder="Enter LAN, PAN, or Borrower Name..." 
+              placeholder="Enter LAN, PAN, or Borrower Name..."
               className="w-full pl-12 pr-4 py-4 border-2 border-slate-100 bg-white rounded-xl focus:bg-white focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 outline-none transition-all text-slate-900 placeholder:text-slate-400 font-medium shadow-inner"
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setHasSearched(false);
-                setSearchResults([]);
-              }}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
             />
           </div>
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={!searchQuery.trim() || isSearching}
-            className="bg-brand-600 text-white px-8 py-4 rounded-xl font-semibold hover:bg-brand-700 disabled:opacity-50 transition-all shadow-md shadow-brand-500/20 hover:shadow-lg active:scale-95 min-w-[140px]"
+            className="bg-brand-600 text-white px-8 py-4 rounded-xl font-semibold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-brand-500/20 hover:shadow-lg active:scale-95 min-w-[140px] flex items-center justify-center gap-2"
           >
-            {isSearching ? 'Searching...' : 'Search'}
+            {isSearching ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Searching...
+              </>
+            ) : (
+              <>
+                <Search className="w-5 h-5" />
+                Search
+              </>
+            )}
           </button>
         </form>
 
+        {/* Loading State */}
+        {isSearching && (
+          <div className="mt-8 border border-slate-200 rounded-xl overflow-hidden shadow-sm p-8">
+            <TableSkeleton rows={3} />
+          </div>
+        )}
+
         {/* Search Results */}
-        {searchResults.length > 0 && (
-          <div className="mt-8 border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        {!isSearching && searchResults.length > 0 && (
+          <div className="mt-8 border border-slate-200 rounded-xl overflow-hidden shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-300">
             <div className="bg-slate-50 px-6 py-3 border-b border-slate-200 flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Search Results ({searchResults.length})</h3>
             </div>
