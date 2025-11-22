@@ -1,0 +1,100 @@
+
+import React, { useState } from 'react';
+import { MOCK_USERS } from './constants';
+import { store } from './services/mockStore';
+import { UserRole, User } from './types';
+import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
+import { AlertBanner } from './components/AlertBanner';
+import { AiAssistant } from './components/AiAssistant';
+import { BankDashboard } from './pages/BankDashboard';
+import { OpsDashboard } from './pages/OpsDashboard';
+import { AdvocateDashboard } from './pages/AdvocateDashboard';
+import { AssignmentDetails } from './pages/AssignmentDetails';
+import { MasterManagement } from './pages/MasterManagement';
+
+const App: React.FC = () => {
+  // Mock Auth State
+  const [user, setUser] = useState<User>(MOCK_USERS[0]); // Default to Bank User
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
+  const [activeModule, setActiveModule] = useState('dashboard');
+
+  // Resolve the full assignment object for the AI Assistant context
+  const selectedAssignment = selectedAssignmentId ? store.getAssignmentById(selectedAssignmentId) : undefined;
+
+  const handleSwitchUser = (role: UserRole) => {
+    const newUser = MOCK_USERS.find(u => u.role === role);
+    if (newUser) {
+        setUser(newUser);
+        setSelectedAssignmentId(null); // Reset view when switching user
+        setActiveModule('dashboard');
+    }
+  };
+
+  const handleModuleChange = (moduleId: string) => {
+    setActiveModule(moduleId);
+    setSelectedAssignmentId(null); // Go back to dashboard view when menu clicked
+  };
+
+  const handleNotificationClick = (assignmentId: string) => {
+    setSelectedAssignmentId(assignmentId);
+  };
+
+  // Render content based on role and navigation state
+  const renderMainContent = () => {
+    if (selectedAssignmentId) {
+        return (
+            <AssignmentDetails 
+                assignmentId={selectedAssignmentId} 
+                currentUser={user} 
+                onBack={() => setSelectedAssignmentId(null)} 
+            />
+        );
+    }
+
+    if (activeModule === 'masters' && user.role === UserRole.CT_OPS) {
+        return <MasterManagement />;
+    }
+
+    switch (user.role) {
+      case UserRole.BANK_USER:
+        return <BankDashboard user={user} onSelectAssignment={setSelectedAssignmentId} initialView={activeModule === 'fetch' ? 'claim-form' : 'dashboard'} />;
+      case UserRole.CT_OPS:
+        return <OpsDashboard onSelectAssignment={setSelectedAssignmentId} />;
+      case UserRole.ADVOCATE:
+        return <AdvocateDashboard user={user} onSelectAssignment={setSelectedAssignmentId} />;
+      default:
+        return <div>Access Denied</div>;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans flex flex-col">
+      <Header 
+        currentUser={user} 
+        onLogout={() => alert("Logged out")} 
+        onSwitchUser={handleSwitchUser}
+      />
+      
+      <div className="flex flex-1">
+        <Sidebar 
+            user={user} 
+            activeModule={activeModule} 
+            onSelectModule={handleModuleChange}
+        />
+        
+        <main className="flex-1 flex flex-col min-w-0">
+            <AlertBanner user={user} onOpenAssignment={handleNotificationClick} />
+            <div className="p-8">
+                {renderMainContent()}
+            </div>
+        </main>
+      </div>
+
+      {/* Global AI Assistant - Persists across pages */}
+      <AiAssistant user={user} assignment={selectedAssignment} />
+    </div>
+  );
+};
+
+export default App;
