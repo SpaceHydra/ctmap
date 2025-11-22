@@ -496,6 +496,124 @@ class MockStore {
     this.saveToStorage();
     return updated;
   }
+
+  // -- Auto-Allocation Engine --
+
+  /**
+   * Auto-allocate a single assignment to the best-match advocate
+   * Uses smart matching based on location, workload, and expertise
+   */
+  autoAllocateAssignment(assignmentId: string): { success: boolean; advocateId?: string; reason?: string } {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      return { success: false, reason: 'Assignment not found' };
+    }
+
+    if (assignment.status !== AssignmentStatus.PENDING_ALLOCATION) {
+      return { success: false, reason: 'Assignment not in PENDING_ALLOCATION status' };
+    }
+
+    // Get available advocates (workload < 5)
+    const advocates = this.getAdvocates();
+    const availableAdvocates = advocates.filter(adv => {
+      const workload = this.getAdvocateWorkload(adv.id);
+      return workload < 5; // Max 5 active assignments per advocate
+    });
+
+    if (availableAdvocates.length === 0) {
+      return { success: false, reason: 'No advocates available (all at capacity)' };
+    }
+
+    // Score each advocate based on multiple factors
+    const scoredAdvocates = availableAdvocates.map(adv => {
+      let score = 0;
+
+      // Factor 1: Location match (highest priority)
+      const stateMatch = adv.states?.includes(assignment.state);
+      const districtMatch = adv.districts?.includes(assignment.district);
+      if (stateMatch && districtMatch) {
+        score += 100; // Perfect match
+      } else if (stateMatch) {
+        score += 50; // State match only
+      }
+
+      // Factor 2: Product expertise
+      if (adv.expertise?.includes(assignment.productType)) {
+        score += 30;
+      }
+
+      // Factor 3: Workload (prefer less loaded advocates)
+      const workload = this.getAdvocateWorkload(adv.id);
+      score += (5 - workload) * 10; // 50 points for 0 workload, 0 points for 5 workload
+
+      // Factor 4: Hub alignment (bonus for same hub)
+      if (adv.hubId === assignment.hubId) {
+        score += 20;
+      }
+
+      return { advocate: adv, score };
+    });
+
+    // Sort by score (highest first)
+    scoredAdvocates.sort((a, b) => b.score - a.score);
+
+    // Allocate to best match
+    const bestMatch = scoredAdvocates[0];
+    if (!bestMatch) {
+      return { success: false, reason: 'No suitable advocate found' };
+    }
+
+    try {
+      this.allocateAdvocate(assignmentId, bestMatch.advocate.id, 'Auto-allocated by smart engine');
+      return {
+        success: true,
+        advocateId: bestMatch.advocate.id,
+        reason: `Matched to ${bestMatch.advocate.name} (score: ${bestMatch.score})`
+      };
+    } catch (error) {
+      return { success: false, reason: `Allocation failed: ${error}` };
+    }
+  }
+
+  /**
+   * Bulk auto-allocate multiple assignments
+   * Returns summary of results
+   */
+  bulkAutoAllocate(assignmentIds: string[]): {
+    total: number;
+    successful: number;
+    failed: number;
+    results: Array<{ assignmentId: string; success: boolean; advocateId?: string; reason?: string }>;
+  } {
+    const results = assignmentIds.map(id => {
+      const result = this.autoAllocateAssignment(id);
+      return { assignmentId: id, ...result };
+    });
+
+    return {
+      total: assignmentIds.length,
+      successful: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length,
+      results
+    };
+  }
+
+  /**
+   * Auto-allocate ALL pending assignments
+   * Useful for batch processing new assignments
+   */
+  autoAllocateAll(): {
+    total: number;
+    successful: number;
+    failed: number;
+    results: Array<{ assignmentId: string; success: boolean; advocateId?: string; reason?: string }>;
+  } {
+    const pendingAssignments = this.assignments.filter(
+      a => a.status === AssignmentStatus.PENDING_ALLOCATION
+    );
+    const ids = pendingAssignments.map(a => a.id);
+    return this.bulkAutoAllocate(ids);
+  }
 }
 
 export const store = new MockStore();

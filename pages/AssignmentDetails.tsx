@@ -578,15 +578,42 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
                         <tr>
                             <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Document Name</th>
                             <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
+                            <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Action</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
-                        {assignment.documents.map((doc, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50">
-                                <td className="px-6 py-4 whitespace-nowrap font-bold text-sm text-slate-900">{doc.name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{doc.category}</td>
+                        {assignment.documents.length === 0 ? (
+                            <tr>
+                                <td colSpan={3} className="px-6 py-8 text-center text-sm text-slate-400">
+                                    No documents uploaded yet
+                                </td>
                             </tr>
-                        ))}
+                        ) : (
+                            assignment.documents.map((doc, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-2">
+                                            <FileIcon className="w-4 h-4 text-slate-400" />
+                                            <span className="font-medium text-sm text-slate-900">{doc.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                            {doc.category}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                        <button
+                                            onClick={() => alert(`📄 Viewing: ${doc.name}\n\nIn production, this would open/download the document.`)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
+                                        >
+                                            <Download className="w-3.5 h-3.5" />
+                                            Download
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>
@@ -623,10 +650,68 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
                              ) : (
                                  activeQueryId === q.id && (
                                      <div className="ml-14 bg-white p-6 rounded-xl border border-brand-200 shadow-lg ring-1 ring-brand-100">
-                                         <textarea className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm mb-4" rows={3} autoFocus placeholder="Type your response..." value={responseText} onChange={(e) => setResponseText(e.target.value)} />
+                                         <textarea
+                                             className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm mb-4"
+                                             rows={3}
+                                             autoFocus
+                                             placeholder="Type your response..."
+                                             value={responseText}
+                                             onChange={(e) => setResponseText(e.target.value)}
+                                         />
+
+                                         {/* Document Upload Option */}
+                                         <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                             <label className="block text-xs font-bold text-blue-900 mb-2">
+                                                 📎 Attach Document (Optional)
+                                             </label>
+                                             <input
+                                                 ref={responseFileInputRef}
+                                                 type="file"
+                                                 onChange={(e) => setResponseFile(e.target.files?.[0] || null)}
+                                                 className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand-600 file:text-white hover:file:bg-brand-700 cursor-pointer"
+                                             />
+                                             {responseFile && (
+                                                 <div className="mt-2 flex items-center gap-2 text-xs text-blue-700">
+                                                     <FileIcon className="w-3.5 h-3.5" />
+                                                     <span className="font-medium">{responseFile.name}</span>
+                                                     <button
+                                                         onClick={() => setResponseFile(null)}
+                                                         className="ml-auto text-rose-600 hover:text-rose-700"
+                                                     >
+                                                         <X className="w-3.5 h-3.5" />
+                                                     </button>
+                                                 </div>
+                                             )}
+                                         </div>
+
+                                         {isBankUser && canEditDocs && (
+                                             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                                                 <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                                                 <p className="text-xs text-amber-800">
+                                                     <strong>Need to upload additional documents?</strong> Use the "Documents" tab above to add more files like Sale Deed, Index II, etc.
+                                                 </p>
+                                             </div>
+                                         )}
+
                                          <div className="flex justify-end gap-3">
-                                             <button onClick={() => { setActiveQueryId(null); setResponseText(''); }} className="px-4 py-2 text-xs font-bold text-slate-500">Cancel</button>
-                                             <button onClick={() => handleRespondQuery(q.id)} className="px-6 py-2 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700">Send Reply</button>
+                                             <button
+                                                 onClick={() => {
+                                                     setActiveQueryId(null);
+                                                     setResponseText('');
+                                                     setResponseFile(null);
+                                                 }}
+                                                 className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+                                             >
+                                                 Cancel
+                                             </button>
+                                             <button
+                                                 onClick={() => handleRespondQuery(q.id)}
+                                                 disabled={!responseText.trim()}
+                                                 className="px-6 py-2 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                                             >
+                                                 <Send className="w-3.5 h-3.5" />
+                                                 Send Reply
+                                             </button>
                                          </div>
                                      </div>
                                  )
