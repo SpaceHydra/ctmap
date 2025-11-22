@@ -3,6 +3,7 @@ import { User, Assignment, AssignmentStatus } from '../types';
 import { store } from '../services/mockStore';
 import { AlertCircle, ArrowRight, Clock, MessageSquare, FileText, CheckCircle } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
+import { DashboardSkeleton } from '../components/LoadingSkeleton';
 
 interface Props {
   user: User;
@@ -12,18 +13,28 @@ interface Props {
 export const ActionRequired: React.FC<Props> = ({ user, onSelectAssignment }) => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [filter, setFilter] = useState<'all' | 'queries' | 'approvals'>('all');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refreshData = () => {
+    setIsLoading(true);
+    setTimeout(() => {
+      const all = store.getAssignments();
+      const myAssignments = all.filter(a => a.ownerId === user.id);
+
+      // Filter assignments that need action
+      const actionNeeded = myAssignments.filter(a =>
+        a.status === AssignmentStatus.QUERY_RAISED ||
+        a.status === AssignmentStatus.PENDING_APPROVAL
+      );
+
+      setAssignments(actionNeeded);
+      setIsLoading(false);
+    }, 400);
+  };
 
   useEffect(() => {
-    const all = store.getAssignments();
-    const myAssignments = all.filter(a => a.ownerId === user.id);
-
-    // Filter assignments that need action
-    const actionNeeded = myAssignments.filter(a =>
-      a.status === AssignmentStatus.QUERY_RAISED ||
-      a.status === AssignmentStatus.PENDING_APPROVAL
-    );
-
-    setAssignments(actionNeeded);
+    refreshData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
 
   const filteredAssignments = assignments.filter(a => {
@@ -37,6 +48,10 @@ export const ActionRequired: React.FC<Props> = ({ user, onSelectAssignment }) =>
     queries: assignments.filter(a => a.status === AssignmentStatus.QUERY_RAISED).length,
     approvals: assignments.filter(a => a.status === AssignmentStatus.PENDING_APPROVAL).length,
   };
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-500">

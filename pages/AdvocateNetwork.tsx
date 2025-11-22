@@ -2,20 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { store } from '../services/mockStore';
 import { Users, MapPin, Briefcase, Star, TrendingUp, Award, Search } from 'lucide-react';
+import { DashboardSkeleton } from '../components/LoadingSkeleton';
 
 export const AdvocateNetwork: React.FC = () => {
   const [advocates, setAdvocates] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const allAdvocates = store.getUsers().filter(u => u.role === UserRole.ADVOCATE);
-    setAdvocates(allAdvocates);
+    setIsLoading(true);
+    setTimeout(() => {
+      const allAdvocates = store.getUsers().filter(u => u.role === UserRole.ADVOCATE);
+      setAdvocates(allAdvocates);
+      setIsLoading(false);
+    }, 400);
   }, []);
 
   const filteredAdvocates = advocates.filter(adv =>
     adv.firmName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     adv.states?.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in duration-500">

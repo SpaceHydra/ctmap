@@ -22,9 +22,16 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User>(MOCK_USERS[0]); // Default to Bank User
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [activeModule, setActiveModule] = useState('dashboard');
+  const [refreshKey, setRefreshKey] = useState(0); // Force refresh on navigation
 
   // Resolve the full assignment object for the AI Assistant context
   const selectedAssignment = selectedAssignmentId ? store.getAssignmentById(selectedAssignmentId) : undefined;
+
+  // Handle back navigation with data refresh
+  const handleBackToDashboard = () => {
+    setSelectedAssignmentId(null);
+    setRefreshKey(prev => prev + 1); // Trigger refresh
+  };
 
   const handleSwitchUser = (role: UserRole) => {
     const newUser = MOCK_USERS.find(u => u.role === role);
@@ -32,12 +39,14 @@ const App: React.FC = () => {
         setUser(newUser);
         setSelectedAssignmentId(null); // Reset view when switching user
         setActiveModule('dashboard');
+        setRefreshKey(prev => prev + 1); // Trigger refresh
     }
   };
 
   const handleModuleChange = (moduleId: string) => {
     setActiveModule(moduleId);
     setSelectedAssignmentId(null); // Go back to dashboard view when menu clicked
+    setRefreshKey(prev => prev + 1); // Trigger refresh
   };
 
   const handleNotificationClick = (assignmentId: string) => {
@@ -52,7 +61,7 @@ const App: React.FC = () => {
               <AssignmentDetails
                   assignmentId={selectedAssignmentId}
                   currentUser={user}
-                  onBack={() => setSelectedAssignmentId(null)}
+                  onBack={handleBackToDashboard}
               />
             </div>
         );
@@ -78,7 +87,7 @@ const App: React.FC = () => {
     if (activeModule === 'actions' && user.role === UserRole.BANK_USER) {
         return (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <ActionRequired user={user} onSelectAssignment={setSelectedAssignmentId} />
+            <ActionRequired key={refreshKey} user={user} onSelectAssignment={setSelectedAssignmentId} />
           </div>
         );
     }
@@ -86,7 +95,7 @@ const App: React.FC = () => {
     if (activeModule === 'advocates' && user.role === UserRole.CT_OPS) {
         return (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <AdvocateNetwork />
+            <AdvocateNetwork key={refreshKey} />
           </div>
         );
     }
@@ -94,11 +103,11 @@ const App: React.FC = () => {
     // Default dashboard routes by role
     switch (user.role) {
       case UserRole.BANK_USER:
-        return <BankDashboard user={user} onSelectAssignment={setSelectedAssignmentId} initialView={activeModule === 'fetch' ? 'claim-form' : 'dashboard'} />;
+        return <BankDashboard key={refreshKey} user={user} onSelectAssignment={setSelectedAssignmentId} initialView={activeModule === 'fetch' ? 'claim-form' : 'dashboard'} />;
       case UserRole.CT_OPS:
-        return <OpsDashboard onSelectAssignment={setSelectedAssignmentId} />;
+        return <OpsDashboard key={refreshKey} onSelectAssignment={setSelectedAssignmentId} />;
       case UserRole.ADVOCATE:
-        return <AdvocateDashboard user={user} onSelectAssignment={setSelectedAssignmentId} />;
+        return <AdvocateDashboard key={refreshKey} user={user} onSelectAssignment={setSelectedAssignmentId} />;
       default:
         return (
           <div className="flex items-center justify-center min-h-[400px]">
