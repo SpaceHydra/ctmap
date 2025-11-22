@@ -442,7 +442,7 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-8 border-l border-slate-100 pl-8">
+                                    <div className="flex items-center gap-6 lg:gap-8 lg:border-l lg:border-slate-100 lg:pl-8 border-t lg:border-t-0 border-slate-100 pt-4 lg:pt-0">
                                         <div className="text-center min-w-[90px]">
                                             <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Workload</div>
                                             <div className={`px-2 py-1 rounded-md text-xs font-bold border ${loadColor} inline-block w-full`}>{workload} Active</div>
