@@ -322,25 +322,154 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
       {/* Reallocation Modal */}
       {showReallocationModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
-                  <div className="bg-amber-50 px-6 py-4 border-b border-amber-100 flex items-center gap-3">
-                      <div className="p-2 bg-amber-100 rounded-full"><AlertOctagon className="w-5 h-5 text-amber-600" /></div>
-                      <div>
-                        <h3 className="text-lg font-bold text-amber-900">Confirm Re-Allocation</h3>
-                        <p className="text-xs text-amber-700">Changing advocate requires a mandatory reason.</p>
+              <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                  {/* Header */}
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-6 py-4 border-b border-amber-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                          <div className="p-2 bg-amber-100 rounded-full"><AlertOctagon className="w-5 h-5 text-amber-600" /></div>
+                          <div>
+                            <h3 className="text-lg font-bold text-amber-900">Re-Allocate Assignment</h3>
+                            <p className="text-xs text-amber-700">Select a new advocate using smart matching</p>
+                          </div>
                       </div>
+                      <button onClick={() => setShowReallocationModal(false)} className="p-2 hover:bg-amber-100 rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-amber-600" />
+                      </button>
                   </div>
-                  <div className="p-6">
-                      <div className="mb-4">
-                          <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Change <span className="text-red-500">*</span></label>
-                          <textarea 
-                              className="w-full border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-amber-500" rows={3}
-                              value={reallocationReason} onChange={(e) => setReallocationReason(e.target.value)}
-                          />
+
+                  {/* Content */}
+                  <div className="flex-1 overflow-y-auto p-6">
+                      {/* Strategy Tabs */}
+                      <div className="mb-6">
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Allocation Strategy</h4>
+                          <div className="grid grid-cols-3 gap-3">
+                              {['property', 'borrower', 'hub'].map((strat) => (
+                                  <button
+                                      key={strat}
+                                      onClick={() => setAllocationStrategy(strat as any)}
+                                      className={`p-3 rounded-lg border transition-all text-left ${
+                                          allocationStrategy === strat
+                                          ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-500/20'
+                                          : 'border-slate-200 bg-white hover:border-brand-300'
+                                      }`}
+                                  >
+                                      <div className="flex items-center gap-3">
+                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${allocationStrategy === strat ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                              {strat === 'property' ? <MapPin className="w-4 h-4" /> : strat === 'borrower' ? <UserCircle className="w-4 h-4" /> : <Building className="w-4 h-4" />}
+                                          </div>
+                                          <p className={`font-bold text-sm capitalize ${allocationStrategy === strat ? 'text-brand-900' : 'text-slate-700'}`}>{strat}</p>
+                                      </div>
+                                  </button>
+                              ))}
+                          </div>
                       </div>
-                      <div className="flex justify-end gap-3">
-                          <button onClick={() => setShowReallocationModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-                          <button onClick={confirmReallocation} disabled={!reallocationReason.trim()} className="px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50">Confirm Re-Allocate</button>
+
+                      {/* Ranked Advocates */}
+                      <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 sticky top-0 bg-white py-2">
+                              Matched Advocates ({rankedAdvocates.length})
+                          </h4>
+                          {rankedAdvocates.map(({user: adv, score, workload}, idx) => {
+                              const isCurrent = assignment.advocateId === adv.id;
+                              const isBestMatch = idx === 0;
+                              const loadColor = workload < 3 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200';
+
+                              return (
+                                  <div key={adv.id} className={`bg-white p-4 rounded-lg border transition-all flex items-center gap-4 relative ${isCurrent ? 'border-slate-400 bg-slate-50' : selectedAdvocateForRealloc === adv.id ? 'border-brand-500 ring-2 ring-brand-500/20 bg-brand-50' : 'border-slate-200 hover:border-brand-300'}`}>
+                                      {isBestMatch && !isCurrent && (
+                                          <div className="absolute -top-2 left-4 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase flex items-center gap-1">
+                                              <Star className="w-3 h-3 fill-current" /> Best
+                                          </div>
+                                      )}
+                                      <div className="flex items-center gap-3 flex-1">
+                                          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-sm border border-slate-200">
+                                              {adv.firmName?.charAt(0)}
+                                          </div>
+                                          <div className="flex-1">
+                                              <h5 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                                  {adv.firmName}
+                                                  {isCurrent && <span className="text-[10px] bg-slate-600 text-white px-2 py-0.5 rounded uppercase font-bold">Current</span>}
+                                              </h5>
+                                              <div className="flex flex-wrap gap-1 mt-1">
+                                                  {adv.tags?.slice(0, 2).map(tag => (
+                                                      <span key={tag} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">{tag}</span>
+                                                  ))}
+                                              </div>
+                                          </div>
+                                      </div>
+                                      <div className="flex items-center gap-4">
+                                          <div className="text-center min-w-[70px]">
+                                              <div className="text-[10px] font-bold text-slate-400 uppercase">Workload</div>
+                                              <div className={`px-2 py-0.5 rounded text-xs font-bold border ${loadColor} mt-1`}>{workload}</div>
+                                          </div>
+                                          <div className="text-center min-w-[60px]">
+                                              <div className="text-[10px] font-bold text-slate-400 uppercase">Score</div>
+                                              <div className="text-xl font-bold text-brand-600 mt-1">{score}</div>
+                                          </div>
+                                      </div>
+                                      <button
+                                          onClick={() => setSelectedAdvocateForRealloc(selectedAdvocateForRealloc === adv.id ? '' : adv.id)}
+                                          disabled={isCurrent}
+                                          className={`px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-all ${
+                                              isCurrent ? 'bg-slate-100 text-slate-400 cursor-not-allowed' :
+                                              selectedAdvocateForRealloc === adv.id ? 'bg-brand-600 text-white' :
+                                              'bg-slate-900 text-white hover:bg-brand-600'
+                                          }`}
+                                      >
+                                          {isCurrent ? 'Current' : selectedAdvocateForRealloc === adv.id ? 'Selected' : 'Select'}
+                                      </button>
+                                  </div>
+                              );
+                          })}
+                      </div>
+
+                      {/* Reason Field (only shown when advocate selected) */}
+                      {selectedAdvocateForRealloc && selectedAdvocateForRealloc !== assignment.advocateId && (
+                          <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                              <label className="block text-sm font-bold text-amber-900 mb-2">
+                                  Reason for Re-Allocation <span className="text-red-500">*</span>
+                              </label>
+                              <textarea
+                                  className="w-full border-amber-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-amber-500 bg-white"
+                                  rows={3}
+                                  placeholder="Enter the reason for changing the advocate..."
+                                  value={reallocationReason}
+                                  onChange={(e) => setReallocationReason(e.target.value)}
+                                  autoFocus
+                              />
+                          </div>
+                      )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+                      <p className="text-sm text-slate-600">
+                          {selectedAdvocateForRealloc && selectedAdvocateForRealloc !== assignment.advocateId ? (
+                              <span className="text-brand-600 font-semibold">
+                                  Ready to re-allocate to {rankedAdvocates.find(r => r.user.id === selectedAdvocateForRealloc)?.user.firmName}
+                              </span>
+                          ) : (
+                              'Select a new advocate to continue'
+                          )}
+                      </p>
+                      <div className="flex gap-3">
+                          <button
+                              onClick={() => {
+                                  setShowReallocationModal(false);
+                                  setSelectedAdvocateForRealloc('');
+                                  setReallocationReason('');
+                              }}
+                              className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                              Cancel
+                          </button>
+                          <button
+                              onClick={confirmReallocation}
+                              disabled={!selectedAdvocateForRealloc || !reallocationReason.trim() || selectedAdvocateForRealloc === assignment.advocateId}
+                              className="px-6 py-2 text-sm font-bold bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md"
+                          >
+                              Confirm Re-Allocate
+                          </button>
                       </div>
                   </div>
               </div>
