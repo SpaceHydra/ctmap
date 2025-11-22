@@ -469,18 +469,39 @@ class MockStore {
     // Get owner and hub details for email delivery
     const owner = this.getUserById(assignment.ownerId || '');
     const hub = this.getHubs().find(h => h.id === assignment.hubId);
+    const currentUser = this.currentUser;
+
+    const deliveredAt = new Date().toISOString();
 
     const updated: Assignment = {
       ...assignment,
       status: AssignmentStatus.COMPLETED,
-      completedAt: new Date().toISOString(),
+      completedAt: deliveredAt,
+      reportDelivery: {
+        deliveredAt,
+        deliveredTo: [
+          {
+            name: owner?.name || 'Unknown Owner',
+            email: owner?.email || 'unknown@example.com',
+            role: 'Owner'
+          },
+          ...(hub ? [{
+            name: hub.hubName || 'Hub',
+            email: hub.hubEmail || 'hub@example.com',
+            role: 'Hub' as const
+          }] : [])
+        ],
+        deliveredBy: currentUser?.id || assignment.ownerId || 'UNKNOWN',
+        deliveredByName: currentUser?.name || 'System',
+        reportUrl: assignment.finalReportUrl || ''
+      },
       auditTrail: [
         ...(assignment.auditTrail || []),
         {
           action: 'APPROVED',
-          performedBy: assignment.ownerId || 'UNKNOWN',
-          timestamp: new Date().toISOString(),
-          details: `Report approved. Email sent to: ${owner?.email || 'N/A'} (Owner), ${hub?.hubEmail || 'N/A'} (Hub)`
+          performedBy: currentUser?.id || assignment.ownerId || 'UNKNOWN',
+          timestamp: deliveredAt,
+          details: `Report approved and delivered to: ${owner?.email || 'N/A'} (Owner), ${hub?.hubEmail || 'N/A'} (Hub)`
         }
       ]
     };
