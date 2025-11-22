@@ -7,6 +7,7 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { AlertBanner } from './components/AlertBanner';
 import { AiAssistant } from './components/AiAssistant';
+import { DemoControls } from './components/DemoControls';
 import { BankDashboard } from './pages/BankDashboard';
 import { OpsDashboard } from './pages/OpsDashboard';
 import { AdvocateDashboard } from './pages/AdvocateDashboard';
@@ -138,6 +139,9 @@ const App: React.FC = () => {
 
       {/* Global AI Assistant - Persists across pages */}
       <AiAssistant user={user} assignment={selectedAssignment} />
+
+      {/* Demo Controls - Data management for demo purposes */}
+      <DemoControls />
     </div>
   );
 };

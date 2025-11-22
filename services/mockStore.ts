@@ -2,12 +2,100 @@
 import { Assignment, AssignmentStatus, User, Hub, UserRole, AuditLogEntry, TransferRequest } from '../types';
 import { INITIAL_ASSIGNMENTS as SEED_DATA, MOCK_HUBS as SEED_HUBS, MOCK_USERS as SEED_USERS } from '../constants';
 
-// Singleton Store
+// Singleton Store with localStorage persistence
 class MockStore {
-  private assignments: Assignment[] = [...SEED_DATA];
-  private users: User[] = [...SEED_USERS];
-  private hubs: Hub[] = [...SEED_HUBS];
-  
+  private static STORAGE_KEY = 'ctmap_demo_data';
+  private static VERSION = '1.0';
+
+  private assignments: Assignment[] = [];
+  private users: User[] = [];
+  private hubs: Hub[] = [];
+
+  constructor() {
+    this.loadFromStorage();
+  }
+
+  // -- Storage Management --
+
+  private loadFromStorage(): void {
+    try {
+      const stored = localStorage.getItem(MockStore.STORAGE_KEY);
+      if (stored) {
+        const data = JSON.parse(stored);
+
+        // Validate version and data integrity
+        if (data.version === MockStore.VERSION && data.assignments && data.users && data.hubs) {
+          this.assignments = data.assignments;
+          this.users = data.users;
+          this.hubs = data.hubs;
+          console.log('✅ Loaded data from localStorage:', {
+            assignments: this.assignments.length,
+            users: this.users.length,
+            hubs: this.hubs.length
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load from localStorage, using seed data:', error);
+    }
+
+    // Fallback to seed data
+    this.resetToSeedData();
+  }
+
+  private saveToStorage(): void {
+    try {
+      const data = {
+        version: MockStore.VERSION,
+        assignments: this.assignments,
+        users: this.users,
+        hubs: this.hubs,
+        lastUpdated: new Date().toISOString()
+      };
+      localStorage.setItem(MockStore.STORAGE_KEY, JSON.stringify(data));
+    } catch (error) {
+      console.error('Failed to save to localStorage:', error);
+    }
+  }
+
+  // Reset to original seed data (for demo purposes)
+  resetToSeedData(): void {
+    this.assignments = [...SEED_DATA];
+    this.users = [...SEED_USERS];
+    this.hubs = [...SEED_HUBS];
+    this.saveToStorage();
+    console.log('🔄 Reset to seed data');
+  }
+
+  // Export current state (for backup)
+  exportData() {
+    return {
+      version: MockStore.VERSION,
+      assignments: this.assignments,
+      users: this.users,
+      hubs: this.hubs,
+      exportedAt: new Date().toISOString()
+    };
+  }
+
+  // Import data (for restore)
+  importData(data: any): void {
+    if (data.assignments && data.users && data.hubs) {
+      this.assignments = data.assignments;
+      this.users = data.users;
+      this.hubs = data.hubs;
+      this.saveToStorage();
+      console.log('📥 Imported data successfully');
+    }
+  }
+
+  // Clear all data
+  clearAllData(): void {
+    localStorage.removeItem(MockStore.STORAGE_KEY);
+    this.resetToSeedData();
+  }
+
   // -- Getters --
   
   getAssignments(): Assignment[] {
@@ -48,15 +136,17 @@ class MockStore {
   }
 
   // -- Master Management --
-  
+
   addHub(hub: Omit<Hub, 'id'>): Hub {
       const newHub = { ...hub, id: `h${this.hubs.length + 1}` };
       this.hubs = [...this.hubs, newHub];
+      this.saveToStorage();
       return newHub;
   }
 
   updateHub(updatedHub: Hub): void {
       this.hubs = this.hubs.map(h => h.id === updatedHub.id ? updatedHub : h);
+      this.saveToStorage();
   }
 
   deleteHub(id: string): void {
@@ -66,11 +156,12 @@ class MockStore {
           throw new Error("Cannot delete Hub: Active users are mapped to this hub.");
       }
       this.hubs = this.hubs.filter(h => h.id !== id);
+      this.saveToStorage();
   }
 
   addUser(user: Omit<User, 'id'>): User {
-      const newUser = { 
-        ...user, 
+      const newUser = {
+        ...user,
         id: `u_${Date.now()}`,
         // Ensure arrays are initialized if undefined
         states: user.states || [],
@@ -79,11 +170,13 @@ class MockStore {
         tags: user.tags || []
       };
       this.users = [...this.users, newUser];
+      this.saveToStorage();
       return newUser;
   }
 
   updateUser(updatedUser: User): void {
       this.users = this.users.map(u => u.id === updatedUser.id ? updatedUser : u);
+      this.saveToStorage();
   }
 
   deleteUser(id: string): void {
@@ -93,6 +186,7 @@ class MockStore {
           throw new Error("Cannot delete User: They have associated assignments.");
       }
       this.users = this.users.filter(u => u.id !== id);
+      this.saveToStorage();
   }
 
   // -- Actions --
@@ -113,9 +207,9 @@ class MockStore {
   claimAssignment(assignmentId: string, userId: string): Assignment {
     const assignment = this.assignments.find(a => a.id === assignmentId);
     const user = this.users.find(u => u.id === userId);
-    
+
     if (!assignment || !user) throw new Error("Invalid ID");
-    
+
     // Allow if UNCLAIMED, or if already owned by THIS user (re-saving draft)
     if (assignment.status !== AssignmentStatus.UNCLAIMED && assignment.ownerId !== userId) {
         throw new Error("Assignment already claimed by another user");
@@ -134,6 +228,7 @@ class MockStore {
     };
 
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 
@@ -142,7 +237,7 @@ class MockStore {
       const assignment = this.assignments.find(a => a.id === assignmentId);
       const user = this.users.find(u => u.id === requestorId);
       if (!assignment || !user) throw new Error("Not found");
-      
+
       if (assignment.ownerId === requestorId) throw new Error("You already own this assignment");
       if (assignment.transferRequest) throw new Error("Transfer request already pending");
 
@@ -162,6 +257,7 @@ class MockStore {
       };
 
       this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+      this.saveToStorage();
       return updated;
   }
 
@@ -202,6 +298,7 @@ class MockStore {
       }
 
       this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+      this.saveToStorage();
       return updated;
   }
 
@@ -220,8 +317,9 @@ class MockStore {
       ...assignment,
       documents: [...assignment.documents, ...newDocs]
     };
-    
+
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 
@@ -238,6 +336,7 @@ class MockStore {
       ]
     };
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 
@@ -278,6 +377,7 @@ class MockStore {
     };
 
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 
@@ -302,6 +402,7 @@ class MockStore {
     };
 
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 
@@ -330,6 +431,7 @@ class MockStore {
     };
 
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 
@@ -353,6 +455,7 @@ class MockStore {
     };
 
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 
@@ -372,6 +475,7 @@ class MockStore {
     };
 
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
+    this.saveToStorage();
     return updated;
   }
 }
