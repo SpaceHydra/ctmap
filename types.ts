@@ -110,7 +110,20 @@ export interface Assignment {
   queries: Query[];
   finalReportUrl?: string;
   finalReportVersions?: { url: string; date: string; remarks: string }[];
-  
+
+  // Report Delivery
+  reportDelivery?: {
+    deliveredAt: string;
+    deliveredTo: Array<{
+      name: string;
+      email: string;
+      role: 'Owner' | 'Hub' | 'CC';
+    }>;
+    deliveredBy: string; // User ID who approved
+    deliveredByName: string;
+    reportUrl: string;
+  };
+
   // Audit
   auditTrail: AuditLogEntry[];
 }

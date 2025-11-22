@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Assignment, AssignmentStatus, User, UserRole, ProductType } from '../types';
 import { store } from '../services/mockStore';
 import { StatusBadge } from '../components/StatusBadge';
+import { ReportDeliveryCard } from '../components/ReportDeliveryCard';
 import { FileText, Upload, Send, MessageSquare, CheckCircle, AlertTriangle, Save, ArrowLeft, Paperclip, X, File as FileIcon, Download, Clock, MapPin, Building, UserCircle, Briefcase, ShieldCheck, Star, BadgeCheck, TrendingUp, Users, History, AlertOctagon, GitCommit, Sparkles, Brain, Zap, Lightbulb } from 'lucide-react';
 import { geminiDocClassifier, ClassificationResult } from '../services/geminiDocumentClassification';
 
@@ -746,7 +747,12 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
                     ))}
                 </div>
             </div>
-            
+
+            {/* Report Delivery Card - Show when completed */}
+            {assignment.status === AssignmentStatus.COMPLETED && assignment.reportDelivery && (
+              <ReportDeliveryCard assignment={assignment} currentUserRole={currentUser.role} />
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
                  <div className="bg-slate-50 p-6 rounded-xl border border-slate-100">
