@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Assignment, AssignmentStatus, User, UserRole, ProductType } from '../types';
 import { store } from '../services/mockStore';
 import { StatusBadge } from '../components/StatusBadge';
-import { FileText, Upload, Send, MessageSquare, CheckCircle, AlertTriangle, Save, ArrowLeft, Paperclip, X, File as FileIcon, Download, Clock, MapPin, Building, UserCircle, Briefcase, ShieldCheck, Star, BadgeCheck, TrendingUp, Users, History, AlertOctagon, GitCommit, Sparkles } from 'lucide-react';
+import { FileText, Upload, Send, MessageSquare, CheckCircle, AlertTriangle, Save, ArrowLeft, Paperclip, X, File as FileIcon, Download, Clock, MapPin, Building, UserCircle, Briefcase, ShieldCheck, Star, BadgeCheck, TrendingUp, Users, History, AlertOctagon, GitCommit, Sparkles, Brain, Zap, Lightbulb } from 'lucide-react';
+import { geminiDocClassifier, ClassificationResult } from '../services/geminiDocumentClassification';
 
 interface Props {
   assignmentId: string;
@@ -56,8 +57,13 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
   const [docCategory, setDocCategory] = useState('Sale Deed');
 
   // Bulk upload state
-  const [bulkFiles, setBulkFiles] = useState<Array<{ file: File; category: string }>>([]);
+  const [bulkFiles, setBulkFiles] = useState<Array<{ file: File; category: string; aiClassification?: ClassificationResult }>>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isClassifying, setIsClassifying] = useState(false);
+  const [aiClassificationResults, setAiClassificationResults] = useState<{
+    missingDocuments?: string[];
+    completenessScore?: number;
+  } | null>(null);
   
   // Allocation States
   const [allocationStrategy, setAllocationStrategy] = useState<'property' | 'borrower' | 'hub'>('property');
@@ -210,6 +216,52 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
     }));
 
     setBulkFiles(prev => [...prev, ...newFiles]);
+  };
+
+  // AI-powered document classification
+  const handleAIClassification = async () => {
+    if (bulkFiles.length === 0) return;
+
+    setIsClassifying(true);
+
+    try {
+      const filenames = bulkFiles.map(f => f.file.name);
+      const assignmentContext = {
+        propertyAddress: assignment.propertyAddress,
+        state: assignment.state,
+        district: assignment.district,
+        productType: assignment.productType,
+        scope: assignment.scope || 'Full Chain'
+      };
+
+      const result = await geminiDocClassifier.classifyBulkDocuments(filenames, assignmentContext);
+
+      // Update bulk files with AI classifications
+      const updatedFiles = bulkFiles.map((item, index) => {
+        const aiResult = result.results.find(r => r.filename === item.file.name);
+        if (aiResult) {
+          return {
+            ...item,
+            category: aiResult.classification.category,
+            aiClassification: aiResult.classification
+          };
+        }
+        return item;
+      });
+
+      setBulkFiles(updatedFiles);
+      setAiClassificationResults({
+        missingDocuments: result.missingDocuments,
+        completenessScore: result.completenessScore
+      });
+
+      console.log('✅ AI Classification complete:', result);
+    } catch (error) {
+      console.error('❌ AI classification failed:', error);
+      alert('AI classification failed. Using basic categorization.');
+    } finally {
+      setIsClassifying(false);
+    }
   };
 
   // Handle drag and drop
@@ -834,6 +886,100 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
                             </div>
                           ))}
                         </div>
+
+                        {/* AI Classification Section */}
+                        {geminiDocClassifier.isAvailable() && (
+                          <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-xl p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <Brain className="w-5 h-5 text-purple-600" />
+                                <h5 className="text-sm font-bold text-purple-900">AI-Powered Classification</h5>
+                              </div>
+                              <button
+                                onClick={handleAIClassification}
+                                disabled={isClassifying}
+                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 disabled:bg-purple-300 disabled:cursor-not-allowed transition-all"
+                              >
+                                {isClassifying ? (
+                                  <>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                    Analyzing...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="w-4 h-4" />
+                                    AI Classify
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {/* AI Results */}
+                            {aiClassificationResults && (
+                              <div className="space-y-3">
+                                {/* Completeness Score */}
+                                <div className="bg-white rounded-lg p-3 border border-purple-200">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-bold text-slate-700">Document Completeness</span>
+                                    <span className={`text-sm font-bold ${
+                                      (aiClassificationResults.completenessScore || 0) >= 80 ? 'text-emerald-600' :
+                                      (aiClassificationResults.completenessScore || 0) >= 60 ? 'text-amber-600' :
+                                      'text-rose-600'
+                                    }`}>
+                                      {aiClassificationResults.completenessScore || 0}%
+                                    </span>
+                                  </div>
+                                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full transition-all ${
+                                        (aiClassificationResults.completenessScore || 0) >= 80 ? 'bg-emerald-500' :
+                                        (aiClassificationResults.completenessScore || 0) >= 60 ? 'bg-amber-500' :
+                                        'bg-rose-500'
+                                      }`}
+                                      style={{ width: `${aiClassificationResults.completenessScore || 0}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Missing Documents */}
+                                {aiClassificationResults.missingDocuments && aiClassificationResults.missingDocuments.length > 0 && (
+                                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                                      <span className="text-xs font-bold text-amber-900">Missing Documents</span>
+                                    </div>
+                                    <ul className="space-y-1">
+                                      {aiClassificationResults.missingDocuments.map((doc, idx) => (
+                                        <li key={idx} className="text-xs text-amber-800 flex items-start gap-2">
+                                          <span className="text-amber-600">•</span>
+                                          <span>{doc}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {/* AI Insights */}
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Lightbulb className="w-4 h-4 text-blue-600" />
+                                    <span className="text-xs font-bold text-blue-900">AI Insights</span>
+                                  </div>
+                                  <p className="text-xs text-blue-800">
+                                    Gemini AI has analyzed {bulkFiles.length} document{bulkFiles.length > 1 ? 's' : ''} and provided intelligent categorization based on filename patterns, assignment context, and document requirements for title search.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {!aiClassificationResults && !isClassifying && (
+                              <p className="text-xs text-purple-700">
+                                Click "AI Classify" to let Gemini intelligently categorize your documents, identify missing files, and assess completeness.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
                         <button
                           onClick={handleBulkUpload}
                           className="w-full px-6 py-3 bg-brand-600 text-white rounded-lg font-semibold shadow-md hover:bg-brand-700 flex items-center justify-center gap-2 transition-colors"
