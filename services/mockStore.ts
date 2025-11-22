@@ -1,6 +1,8 @@
 
 import { Assignment, AssignmentStatus, User, Hub, UserRole, AuditLogEntry, TransferRequest } from '../types';
 import { INITIAL_ASSIGNMENTS as SEED_DATA, MOCK_HUBS as SEED_HUBS, MOCK_USERS as SEED_USERS } from '../constants';
+import { TEST_ASSIGNMENTS, TEST_HUBS, TEST_USERS } from '../testData';
+import { geminiAllocationService } from './geminiAllocation';
 
 // Singleton Store with localStorage persistence
 class MockStore {
@@ -613,6 +615,143 @@ class MockStore {
     );
     const ids = pendingAssignments.map(a => a.id);
     return this.bulkAutoAllocate(ids);
+  }
+
+  // -- Gemini AI Allocation --
+
+  /**
+   * Check if Gemini AI is available
+   */
+  isGeminiAvailable(): boolean {
+    return geminiAllocationService.isAvailable();
+  }
+
+  /**
+   * Allocate using Gemini AI
+   */
+  async geminiAllocateAssignment(assignmentId: string): Promise<{
+    success: boolean;
+    advocateId?: string;
+    advocateName?: string;
+    reason?: string;
+    confidence?: number;
+    factors?: string[];
+  }> {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      return { success: false, reason: 'Assignment not found' };
+    }
+
+    if (assignment.status !== AssignmentStatus.PENDING_ALLOCATION) {
+      return { success: false, reason: 'Assignment not in PENDING_ALLOCATION status' };
+    }
+
+    const advocates = this.getAdvocates();
+    const result = await geminiAllocationService.allocateWithAI(
+      assignment,
+      advocates,
+      (id) => this.getAdvocateWorkload(id)
+    );
+
+    if (result.success && result.advocateId) {
+      try {
+        this.allocateAdvocate(
+          assignmentId,
+          result.advocateId,
+          `AI-allocated by Gemini (confidence: ${result.confidence}/10) - ${result.reason}`
+        );
+      } catch (error) {
+        return { success: false, reason: `Allocation failed: ${error}` };
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Bulk allocate using Gemini AI
+   */
+  async geminiAllocateAll(
+    onProgress?: (current: number, total: number, assignment?: string) => void
+  ): Promise<{
+    total: number;
+    successful: number;
+    failed: number;
+    results: Array<{
+      assignmentId: string;
+      success: boolean;
+      advocateId?: string;
+      advocateName?: string;
+      reason?: string;
+      confidence?: number;
+    }>;
+  }> {
+    const pendingAssignments = this.assignments.filter(
+      a => a.status === AssignmentStatus.PENDING_ALLOCATION
+    );
+
+    const results = [];
+    let successful = 0;
+    let failed = 0;
+
+    for (let i = 0; i < pendingAssignments.length; i++) {
+      const assignment = pendingAssignments[i];
+
+      // Progress callback
+      if (onProgress) {
+        onProgress(i + 1, pendingAssignments.length, assignment.lan);
+      }
+
+      const result = await this.geminiAllocateAssignment(assignment.id);
+
+      if (result.success) {
+        successful++;
+      } else {
+        failed++;
+      }
+
+      results.push({
+        assignmentId: assignment.id,
+        ...result
+      });
+
+      // Small delay to avoid rate limiting
+      if (i < pendingAssignments.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    return {
+      total: pendingAssignments.length,
+      successful,
+      failed,
+      results
+    };
+  }
+
+  // -- Test Data Management --
+
+  /**
+   * Load test dataset (65 assignments, 25 advocates, 10 hubs)
+   */
+  loadTestData(): void {
+    this.assignments = [...TEST_ASSIGNMENTS];
+    this.hubs = [...TEST_HUBS];
+    this.users = [...TEST_USERS];
+    this.saveToStorage();
+    console.log('🧪 Loaded test dataset:', {
+      assignments: this.assignments.length,
+      hubs: this.hubs.length,
+      advocates: this.getAdvocates().length,
+      users: this.users.length
+    });
+  }
+
+  /**
+   * Check if test data is loaded
+   */
+  isTestDataLoaded(): boolean {
+    return this.assignments.length >= 60 && this.getAdvocates().length >= 20;
   }
 }
 
