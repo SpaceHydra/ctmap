@@ -44,16 +44,22 @@ const App: React.FC = () => {
   const renderMainContent = () => {
     if (selectedAssignmentId) {
         return (
-            <AssignmentDetails 
-                assignmentId={selectedAssignmentId} 
-                currentUser={user} 
-                onBack={() => setSelectedAssignmentId(null)} 
-            />
+            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+              <AssignmentDetails
+                  assignmentId={selectedAssignmentId}
+                  currentUser={user}
+                  onBack={() => setSelectedAssignmentId(null)}
+              />
+            </div>
         );
     }
 
     if (activeModule === 'masters' && user.role === UserRole.CT_OPS) {
-        return <MasterManagement />;
+        return (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <MasterManagement />
+          </div>
+        );
     }
 
     switch (user.role) {
@@ -64,28 +70,38 @@ const App: React.FC = () => {
       case UserRole.ADVOCATE:
         return <AdvocateDashboard user={user} onSelectAssignment={setSelectedAssignmentId} />;
       default:
-        return <div>Access Denied</div>;
+        return (
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">🔒</span>
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Access Denied</h3>
+              <p className="text-slate-500">You don't have permission to view this page</p>
+            </div>
+          </div>
+        );
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans flex flex-col">
-      <Header 
-        currentUser={user} 
-        onLogout={() => alert("Logged out")} 
+      <Header
+        currentUser={user}
+        onLogout={() => alert("Logged out")}
         onSwitchUser={handleSwitchUser}
       />
-      
+
       <div className="flex flex-1">
-        <Sidebar 
-            user={user} 
-            activeModule={activeModule} 
+        <Sidebar
+            user={user}
+            activeModule={activeModule}
             onSelectModule={handleModuleChange}
         />
-        
-        <main className="flex-1 flex flex-col min-w-0">
+
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
             <AlertBanner user={user} onOpenAssignment={handleNotificationClick} />
-            <div className="p-8">
+            <div className="p-4 sm:p-6 lg:p-8 overflow-auto">
                 {renderMainContent()}
             </div>
         </main>
