@@ -464,15 +464,33 @@ class MockStore {
     const assignment = this.assignments.find(a => a.id === assignmentId);
     if (!assignment) throw new Error("Not found");
 
+    // Get owner and hub details for email delivery
+    const owner = this.getUserById(assignment.ownerId || '');
+    const hub = this.getHubs().find(h => h.id === assignment.hubId);
+
     const updated: Assignment = {
       ...assignment,
       status: AssignmentStatus.COMPLETED,
       completedAt: new Date().toISOString(),
       auditTrail: [
         ...(assignment.auditTrail || []),
-        { action: 'APPROVED', performedBy: assignment.ownerId || 'UNKNOWN', timestamp: new Date().toISOString() }
+        {
+          action: 'APPROVED',
+          performedBy: assignment.ownerId || 'UNKNOWN',
+          timestamp: new Date().toISOString(),
+          details: `Report approved. Email sent to: ${owner?.email || 'N/A'} (Owner), ${hub?.hubEmail || 'N/A'} (Hub)`
+        }
       ]
     };
+
+    // In production: Send email to owner and hub
+    console.log('📧 Final Report Delivery:', {
+      to: owner?.email,
+      cc: hub?.hubEmail,
+      subject: `[COMPLETED] ${assignment.lan} - ${assignment.borrowerName}`,
+      attachments: [assignment.finalReportUrl],
+      body: `Assignment ${assignment.lan} has been completed and approved.`
+    });
 
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
     this.saveToStorage();
