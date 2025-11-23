@@ -18,11 +18,9 @@ export const AdvocateDashboard: React.FC<Props> = ({ user, onSelectAssignment })
 
   useEffect(() => {
     setIsLoading(true);
-    setTimeout(() => {
-      const all = store.getAssignments();
-      setAssignments(all.filter(a => a.advocateId === user.id));
-      setIsLoading(false);
-    }, 500);
+    const all = store.getAssignments();
+    setAssignments(all.filter(a => a.advocateId === user.id));
+    setIsLoading(false);
   }, [user.id]);
 
   const stats = {

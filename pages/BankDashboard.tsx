@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User, Assignment, AssignmentStatus } from '../types';
 import { store } from '../services/mockStore';
 import { Search, Upload, AlertCircle, CheckCircle, Clock, ArrowRight, Info, FileText, Save, ChevronLeft, Briefcase, Activity, PieChart as PieIcon, RefreshCw, UserCheck, XCircle, Loader2 } from 'lucide-react';
@@ -45,7 +45,7 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
   const [docCategory, setDocCategory] = useState('Sale Deed');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
-  const [searchDebounceTimer, setSearchDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+  const searchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Refresh My Assignments
   const refreshMyList = () => {
@@ -70,13 +70,19 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
 
   useEffect(() => {
     setIsLoadingDashboard(true);
-    // Simulate loading for better UX
-    setTimeout(() => {
-      refreshMyList();
-      setIsLoadingDashboard(false);
-    }, 600);
+    refreshMyList();
+    setIsLoadingDashboard(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchDebounceTimer.current) {
+        clearTimeout(searchDebounceTimer.current);
+      }
+    };
+  }, []);
 
   // Handlers
   const handleSearch = (e: React.FormEvent) => {
@@ -90,20 +96,17 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
     setIsSearching(true);
     setHasSearched(true);
 
-    // Simulate API delay with realistic timing
-    setTimeout(() => {
-      const results = store.searchAssignments(searchQuery);
-      setSearchResults(results);
-      setIsSearching(false);
-    }, 400);
+    const results = store.searchAssignments(searchQuery);
+    setSearchResults(results);
+    setIsSearching(false);
   }, [searchQuery]);
 
   // Debounced search on input change
   const handleSearchInputChange = (value: string) => {
     setSearchQuery(value);
 
-    if (searchDebounceTimer) {
-      clearTimeout(searchDebounceTimer);
+    if (searchDebounceTimer.current) {
+      clearTimeout(searchDebounceTimer.current);
     }
 
     if (!value.trim()) {
@@ -112,12 +115,10 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
       return;
     }
 
-    // Auto-search after 500ms of no typing
-    const timer = setTimeout(() => {
+    // Auto-search after 300ms of no typing
+    searchDebounceTimer.current = setTimeout(() => {
       performSearch();
-    }, 800);
-
-    setSearchDebounceTimer(timer);
+    }, 300);
   };
 
   const handleSelectForClaim = (assignment: Assignment) => {
@@ -155,7 +156,7 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
       }
   };
 
-  const handleClaimProcess = async (action: 'draft' | 'submit') => {
+  const handleClaimProcess = (action: 'draft' | 'submit') => {
     if (!selectedUnclaimed) return;
     
     try {
@@ -175,7 +176,6 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
       }
 
       // Reset UI
-      await new Promise(resolve => setTimeout(resolve, 800)); // Fake loading for UX
       setIsSubmitting(false);
       setSelectedUnclaimed(null);
       setSearchQuery('');

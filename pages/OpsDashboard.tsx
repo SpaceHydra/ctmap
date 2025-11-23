@@ -38,9 +38,8 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
 
   useEffect(() => {
     setIsLoading(true);
-    setTimeout(() => {
-      const all = store.getAssignments();
-      setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
+    const all = store.getAssignments();
+    setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
 
     // Calculate Network Availability
     const advocates = store.getAdvocates();
@@ -61,7 +60,6 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
     setGeminiAvailable(store.isGeminiAvailable());
 
     setIsLoading(false);
-    }, 600);
   }, []);
 
   // Apply status filter + quick filters

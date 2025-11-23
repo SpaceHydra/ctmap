@@ -17,19 +17,17 @@ export const ActionRequired: React.FC<Props> = ({ user, onSelectAssignment }) =>
 
   const refreshData = () => {
     setIsLoading(true);
-    setTimeout(() => {
-      const all = store.getAssignments();
-      const myAssignments = all.filter(a => a.ownerId === user.id);
+    const all = store.getAssignments();
+    const myAssignments = all.filter(a => a.ownerId === user.id);
 
-      // Filter assignments that need action
-      const actionNeeded = myAssignments.filter(a =>
-        a.status === AssignmentStatus.QUERY_RAISED ||
-        a.status === AssignmentStatus.PENDING_APPROVAL
-      );
+    // Filter assignments that need action
+    const actionNeeded = myAssignments.filter(a =>
+      a.status === AssignmentStatus.QUERY_RAISED ||
+      a.status === AssignmentStatus.PENDING_APPROVAL
+    );
 
-      setAssignments(actionNeeded);
-      setIsLoading(false);
-    }, 400);
+    setAssignments(actionNeeded);
+    setIsLoading(false);
   };
 
   useEffect(() => {
