@@ -215,16 +215,62 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
     return 'Sale Deed'; // Default
   };
 
-  // Handle bulk file selection
+  // Handle bulk file selection with validation
   const handleBulkFileSelect = (files: FileList | null) => {
     if (!files) return;
 
-    const newFiles = Array.from(files).map(file => ({
-      file,
-      category: autoCategorize(file.name)
-    }));
+    const maxFileSize = 10 * 1024 * 1024; // 10MB limit
+    const allowedTypes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
 
-    setBulkFiles(prev => [...prev, ...newFiles]);
+    const validFiles: Array<{ file: File; category: string }> = [];
+    const invalidFiles: string[] = [];
+
+    Array.from(files).forEach(file => {
+      // Check file type
+      if (!allowedTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
+        invalidFiles.push(`${file.name} (unsupported format)`);
+        return;
+      }
+
+      // Check file size
+      if (file.size > maxFileSize) {
+        invalidFiles.push(`${file.name} (file too large: ${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+        return;
+      }
+
+      // Check for duplicates
+      const isDuplicate = bulkFiles.some(existing => existing.file.name === file.name);
+      if (isDuplicate) {
+        invalidFiles.push(`${file.name} (already added)`);
+        return;
+      }
+
+      validFiles.push({
+        file,
+        category: autoCategorize(file.name)
+      });
+    });
+
+    // Add valid files
+    if (validFiles.length > 0) {
+      setBulkFiles(prev => [...prev, ...validFiles]);
+    }
+
+    // Show feedback for invalid files
+    if (invalidFiles.length > 0) {
+      alert(
+        `⚠️ Some files were not added:\n\n` +
+        invalidFiles.map(f => `• ${f}`).join('\n') +
+        `\n\nSupported formats: PDF, JPG, PNG, DOC, DOCX\nMax size: 10MB per file`
+      );
+    }
   };
 
   // AI-powered document classification
@@ -273,21 +319,36 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
     }
   };
 
-  // Handle drag and drop
+  // Handle drag and drop (improved to prevent flickering)
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
+    e.stopPropagation();
+    // Only set dragging to false if we're actually leaving the drop zone
+    // (not just entering a child element)
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+
+    if (x <= rect.left || x >= rect.right || y <= rect.top || y >= rect.bottom) {
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
-    handleBulkFileSelect(e.dataTransfer.files);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleBulkFileSelect(files);
+    }
   };
 
   // Remove file from bulk upload list
