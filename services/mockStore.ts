@@ -305,11 +305,12 @@ class MockStore {
   }
 
   // Bank User uploads documents
-  uploadDocuments(assignmentId: string, docs: {name: string, category: string}[], userId: string): Assignment {
+  uploadDocuments(assignmentId: string, docs: {name: string, category: string, file?: File, size?: number}[], userId: string): Assignment {
     const assignment = this.assignments.find(a => a.id === assignmentId);
     if (!assignment) throw new Error("Not found");
 
-    const newDocs = docs.map(d => ({
+    const newDocs = docs.map((d, idx) => ({
+      id: `doc_${Date.now()}_${idx}`,
       ...d,
       uploadedBy: userId,
       date: new Date().toISOString()
@@ -323,6 +324,28 @@ class MockStore {
     this.assignments = this.assignments.map(a => a.id === assignmentId ? updated : a);
     this.saveToStorage();
     return updated;
+  }
+
+  // Save extracted data from parser
+  saveExtractedData(assignmentId: string, documentId: string, data: any): void {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) return;
+
+    const docIndex = assignment.documents.findIndex(d => d.id === documentId);
+    if (docIndex === -1) return;
+
+    assignment.documents[docIndex].extractedData = data;
+
+    // Add audit entry
+    if (!assignment.auditTrail) assignment.auditTrail = [];
+    assignment.auditTrail.push({
+      action: 'DOCUMENT_PARSED',
+      performedBy: 'SYSTEM',
+      timestamp: new Date().toISOString(),
+      details: `Document "${assignment.documents[docIndex].name}" parsed with ${data.confidence}% confidence`
+    });
+
+    this.saveToStorage();
   }
 
   submitForAllocation(assignmentId: string): Assignment {

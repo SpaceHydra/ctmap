@@ -4,8 +4,11 @@ import { Assignment, AssignmentStatus, User, UserRole, ProductType } from '../ty
 import { store } from '../services/mockStore';
 import { StatusBadge } from '../components/StatusBadge';
 import { ReportDeliveryCard } from '../components/ReportDeliveryCard';
+import { DocumentCard } from '../components/DocumentCard';
+import { ExtractedDataModal } from '../components/ExtractedDataModal';
 import { FileText, Upload, Send, MessageSquare, CheckCircle, AlertTriangle, Save, ArrowLeft, Paperclip, X, File as FileIcon, Download, Clock, MapPin, Building, UserCircle, Briefcase, ShieldCheck, Star, BadgeCheck, TrendingUp, Users, History, AlertOctagon, GitCommit, Sparkles, Brain, Zap, Lightbulb } from 'lucide-react';
 import { geminiDocClassifier, ClassificationResult } from '../services/geminiDocumentClassification';
+import { ExtractedData } from '../services/documentParser';
 
 interface Props {
   assignmentId: string;
@@ -84,6 +87,11 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
   // Report State
   const [reportRemarks, setReportRemarks] = useState('');
   const [reportFile, setReportFile] = useState<File | null>(null);
+
+  // Modal State
+  const [showExtractedDataModal, setShowExtractedDataModal] = useState(false);
+  const [selectedExtractedData, setSelectedExtractedData] = useState<ExtractedData | null>(null);
+  const [selectedDocumentName, setSelectedDocumentName] = useState('');
 
   // Refs
   const queryFileInputRef = useRef<HTMLInputElement>(null);
@@ -300,7 +308,9 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
 
     const docs = bulkFiles.map(({ file, category }) => ({
       name: file.name,
-      category
+      category,
+      file,
+      size: file.size
     }));
 
     store.uploadDocuments(assignment.id, docs, currentUser.id);
@@ -1005,51 +1015,31 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
                     )}
                 </div>
             )}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50">
-                        <tr>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Document Name</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
-                            <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-slate-100">
-                        {assignment.documents.length === 0 ? (
-                            <tr>
-                                <td colSpan={3} className="px-6 py-8 text-center text-sm text-slate-400">
-                                    No documents uploaded yet
-                                </td>
-                            </tr>
-                        ) : (
-                            assignment.documents.map((doc, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2">
-                                            <FileIcon className="w-4 h-4 text-slate-400" />
-                                            <span className="font-medium text-sm text-slate-900">{doc.name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            {doc.category}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                                        <button
-                                            onClick={() => alert(`📄 Viewing: ${doc.name}\n\nIn production, this would open/download the document.`)}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
-                                        >
-                                            <Download className="w-3.5 h-3.5" />
-                                            Download
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
+            {/* Document Cards Grid */}
+            {assignment.documents.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                <FileText className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+                <p className="text-sm text-slate-400">No documents uploaded yet</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {assignment.documents.map((doc, idx) => (
+                  <DocumentCard
+                    key={doc.id || idx}
+                    document={doc}
+                    onExtracted={(docId, data) => {
+                      store.saveExtractedData(assignment.id, docId, data);
+                      refresh();
+                    }}
+                    onViewData={(data, docName) => {
+                      setSelectedExtractedData(data);
+                      setSelectedDocumentName(docName);
+                      setShowExtractedDataModal(true);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1174,6 +1164,19 @@ export const AssignmentDetails: React.FC<Props> = ({ assignmentId, currentUser, 
                  </div>
              )}
           </div>
+        )}
+
+        {/* Extracted Data Modal */}
+        {showExtractedDataModal && selectedExtractedData && (
+          <ExtractedDataModal
+            data={selectedExtractedData}
+            documentName={selectedDocumentName}
+            onClose={() => {
+              setShowExtractedDataModal(false);
+              setSelectedExtractedData(null);
+              setSelectedDocumentName('');
+            }}
+          />
         )}
       </div>
     </div>

@@ -72,6 +72,17 @@ export interface TransferRequest {
   requestedAt: string;
 }
 
+export interface AssignmentDocument {
+  id?: string;
+  name: string;
+  category: string;
+  uploadedBy: string;
+  date: string;
+  size?: number;
+  file?: File;
+  extractedData?: any; // Will be populated by parser
+}
+
 export interface Assignment {
   id: string;
   lan: string; // Loan Account Number
@@ -106,7 +117,7 @@ export interface Assignment {
   completedAt?: string;
   
   // Data
-  documents: { name: string; category: string; uploadedBy: string; date: string }[];
+  documents: AssignmentDocument[];
   queries: Query[];
   finalReportUrl?: string;
   finalReportVersions?: { url: string; date: string; remarks: string }[];
