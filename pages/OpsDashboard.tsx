@@ -290,8 +290,19 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
     }
 
     try {
-      store.reAllocateForfeitedAssignment(selectedReAllocateAssignment.id, reAllocateAdvocate);
-      alert(`✅ Assignment ${selectedReAllocateAssignment.lan} re-allocated successfully!`);
+      // Get current user (CT Ops) - in real app, this would come from auth context
+      const currentUser = store.getCurrentUser();
+      const opsUserId = currentUser?.id || 'CT_OPS_SYSTEM';
+
+      store.reAllocateForfeitedAssignment(
+        selectedReAllocateAssignment.id,
+        reAllocateAdvocate,
+        opsUserId,
+        `Manual re-allocation by CT Ops`
+      );
+
+      const advocate = store.getAdvocates().find(adv => adv.id === reAllocateAdvocate);
+      alert(`✅ Assignment ${selectedReAllocateAssignment.lan} re-allocated to ${advocate?.name || 'advocate'}!`);
 
       // Refresh data
       const all = store.getAssignments();
@@ -320,13 +331,19 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
 
     try {
       const result = store.autoReAllocateForfeitedAssignment(assignment.id);
+
+      if (!result.success) {
+        alert(`❌ Auto re-allocation failed: ${result.reason || 'Unknown error'}`);
+        return;
+      }
+
       const advocate = store.getAdvocates().find(adv => adv.id === result.advocateId);
 
       alert(
         `✅ Auto Re-Allocation Successful!\n\n` +
         `Assignment: ${assignment.lan}\n` +
         `Allocated to: ${advocate?.name || 'Unknown'}\n` +
-        `Match Score: ${result.matchScore} points`
+        `${result.reason || 'Smart engine found the best match'}`
       );
 
       // Refresh data
