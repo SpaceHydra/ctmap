@@ -1,15 +1,25 @@
-import React, { useState } from 'react';
-import { FileText, Eye, Zap, BarChart, Download, Loader } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { FileText, Eye, Zap, BarChart, Download, Loader, Trash2, RefreshCw } from 'lucide-react';
 import { documentParser, ExtractedData, DocumentType } from '../services/documentParser';
 import { AssignmentDocument } from '../types';
 
 interface DocumentCardProps {
   document: AssignmentDocument;
+  assignmentId: string;
   onExtracted?: (documentId: string, data: ExtractedData) => void;
   onViewData?: (data: ExtractedData, documentName: string) => void;
+  onDeleted?: (documentId: string) => void;
+  onReplaced?: (documentId: string, newFile: File) => void;
 }
 
-export const DocumentCard: React.FC<DocumentCardProps> = ({ document, onExtracted, onViewData }) => {
+export const DocumentCard: React.FC<DocumentCardProps> = ({
+  document,
+  assignmentId,
+  onExtracted,
+  onViewData,
+  onDeleted,
+  onReplaced
+}) => {
   const [isParsing, setIsParsing] = useState(false);
   const [parseProgress, setParseProgress] = useState(0);
   const [parseStage, setParseStage] = useState('');
@@ -17,6 +27,7 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({ document, onExtracte
     document.extractedData || null
   );
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleParse = async () => {
     if (!document.file) {
@@ -61,6 +72,60 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({ document, onExtracte
         setParseProgress(0);
       }, 1500);
     }
+  };
+
+  const handleDelete = () => {
+    const confirmed = window.confirm(
+      `🗑️ Delete Document?\n\n` +
+      `Document: ${document.name}\n` +
+      `Category: ${document.category}\n\n` +
+      `This action cannot be undone.\n\n` +
+      `Are you sure you want to delete this document?`
+    );
+
+    if (!confirmed) return;
+
+    if (onDeleted && document.id) {
+      onDeleted(document.id);
+    }
+  };
+
+  const handleReplaceClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type (should be PDF)
+    if (file.type !== 'application/pdf') {
+      alert('❌ Only PDF files are supported');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `🔄 Replace Document?\n\n` +
+      `Current: ${document.name}\n` +
+      `New: ${file.name}\n\n` +
+      `This will replace the existing document and clear any extracted data.\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) {
+      // Reset file input
+      event.target.value = '';
+      return;
+    }
+
+    if (onReplaced && document.id) {
+      onReplaced(document.id, file);
+      // Clear extracted data
+      setExtractedData(null);
+    }
+
+    // Reset file input
+    event.target.value = '';
   };
 
   const getStatusBadge = () => {
@@ -238,14 +303,45 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({ document, onExtracte
             View Data
           </button>
         )}
+      </div>
+
+      {/* Secondary Actions */}
+      <div className="flex gap-2 mt-2">
+        <button
+          onClick={handleReplaceClick}
+          className="flex-1 flex items-center justify-center gap-1 px-3 py-2 border-2 border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors"
+          title="Replace with new document"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Replace
+        </button>
+
+        <button
+          onClick={handleDelete}
+          className="flex-1 flex items-center justify-center gap-1 px-3 py-2 border-2 border-red-200 bg-red-50 text-red-700 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors"
+          title="Delete this document"
+        >
+          <Trash2 className="w-4 h-4" />
+          Delete
+        </button>
 
         <button
           onClick={() => alert(`Download functionality would download: ${document.name}`)}
           className="px-3 py-2 border-2 border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+          title="Download document"
         >
           <Download className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Hidden File Input for Replace */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        onChange={handleFileChange}
+        className="hidden"
+      />
     </div>
   );
 };

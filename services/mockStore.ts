@@ -1184,6 +1184,154 @@ class MockStore {
   isTestDataLoaded(): boolean {
     return this.assignments.length >= 60 && this.getAdvocates().length >= 20;
   }
+
+  // -- Advocate Management --
+
+  /**
+   * Update advocate profile (coverage, hub, expertise)
+   */
+  updateAdvocateProfile(
+    advocateId: string,
+    updates: {
+      states?: string[];
+      districts?: string[];
+      hubId?: string;
+      expertise?: string[];
+    }
+  ): User {
+    const user = this.getUserById(advocateId);
+    if (!user || user.role !== UserRole.ADVOCATE) {
+      throw new Error('Advocate not found');
+    }
+
+    if (updates.states !== undefined && updates.states.length === 0) {
+      throw new Error('At least one state must be selected');
+    }
+
+    if (updates.hubId) {
+      const hub = this.hubs.find(h => h.id === updates.hubId);
+      if (!hub) {
+        throw new Error('Invalid hub ID');
+      }
+    }
+
+    const updated: User = {
+      ...user,
+      states: updates.states !== undefined ? updates.states : user.states,
+      districts: updates.districts !== undefined ? updates.districts : user.districts,
+      hubId: updates.hubId !== undefined ? updates.hubId : user.hubId,
+      expertise: updates.expertise !== undefined ? updates.expertise : user.expertise
+    };
+
+    this.users = this.users.map(u => u.id === advocateId ? updated : u);
+    this.saveToStorage();
+
+    console.log(`✏️ Updated advocate profile: ${user.firmName || user.name}`);
+
+    return updated;
+  }
+
+  // -- Document Management --
+
+  /**
+   * Delete document from assignment
+   */
+  deleteDocument(
+    assignmentId: string,
+    documentId: string
+  ): Assignment {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      throw new Error('Assignment not found');
+    }
+
+    const documentIndex = assignment.documents.findIndex(d => d.id === documentId);
+    if (documentIndex === -1) {
+      throw new Error('Document not found');
+    }
+
+    const document = assignment.documents[documentIndex];
+    const currentUser = this.getCurrentUser();
+
+    const updated: Assignment = {
+      ...assignment,
+      documents: assignment.documents.filter(d => d.id !== documentId),
+      auditTrail: [
+        ...(assignment.auditTrail || []),
+        {
+          action: 'DOCUMENT_DELETED',
+          performedBy: currentUser?.id || 'SYSTEM',
+          timestamp: new Date().toISOString(),
+          details: `Deleted document: ${document.category} - ${document.name}`
+        }
+      ]
+    };
+
+    this.assignments = this.assignments.map(a =>
+      a.id === assignmentId ? updated : a
+    );
+    this.saveToStorage();
+
+    console.log(`🗑️ Deleted document: ${document.name} from ${assignment.lan}`);
+
+    return updated;
+  }
+
+  /**
+   * Replace document (re-upload with same category)
+   */
+  replaceDocument(
+    assignmentId: string,
+    documentId: string,
+    newFile: File
+  ): Assignment {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      throw new Error('Assignment not found');
+    }
+
+    const documentIndex = assignment.documents.findIndex(d => d.id === documentId);
+    if (documentIndex === -1) {
+      throw new Error('Document not found');
+    }
+
+    const oldDocument = assignment.documents[documentIndex];
+    const currentUser = this.getCurrentUser();
+
+    const replacementDocument: AssignmentDocument = {
+      ...oldDocument,
+      name: newFile.name,
+      size: newFile.size,
+      date: new Date().toISOString(),
+      file: newFile,
+      extractedData: undefined // Clear extracted data - needs re-parsing
+    };
+
+    const updated: Assignment = {
+      ...assignment,
+      documents: assignment.documents.map((d, idx) =>
+        idx === documentIndex ? replacementDocument : d
+      ),
+      auditTrail: [
+        ...(assignment.auditTrail || []),
+        {
+          action: 'DOCUMENT_REPLACED',
+          performedBy: currentUser?.id || 'SYSTEM',
+          timestamp: new Date().toISOString(),
+          details: `Replaced ${oldDocument.category}: ${oldDocument.name} → ${newFile.name}`
+        }
+      ]
+    };
+
+    this.assignments = this.assignments.map(a =>
+      a.id === assignmentId ? updated : a
+    );
+    this.saveToStorage();
+
+    console.log(`🔄 Replaced document: ${oldDocument.name} → ${newFile.name}`);
+
+    return updated;
+  }
 }
 
 export const store = new MockStore();

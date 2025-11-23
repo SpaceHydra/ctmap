@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { store } from '../services/mockStore';
-import { Users, MapPin, Briefcase, Star, TrendingUp, Award, Search } from 'lucide-react';
+import { Users, MapPin, Briefcase, Star, TrendingUp, Award, Search, Edit2 } from 'lucide-react';
 import { DashboardSkeleton } from '../components/LoadingSkeleton';
+import { EditAdvocateModal, AdvocateUpdates } from '../components/EditAdvocateModal';
 
 export const AdvocateNetwork: React.FC = () => {
   const [advocates, setAdvocates] = useState<User[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedAdvocate, setSelectedAdvocate] = useState<User | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -22,6 +25,29 @@ export const AdvocateNetwork: React.FC = () => {
     adv.firmName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     adv.states?.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const handleEditAdvocate = (advocate: User) => {
+    setSelectedAdvocate(advocate);
+    setShowEditModal(true);
+  };
+
+  const handleSaveAdvocate = (updates: AdvocateUpdates) => {
+    if (!selectedAdvocate) return;
+
+    try {
+      store.updateAdvocateProfile(selectedAdvocate.id, updates);
+
+      // Refresh advocate list
+      const allAdvocates = store.getUsers().filter(u => u.role === UserRole.ADVOCATE);
+      setAdvocates(allAdvocates);
+
+      setShowEditModal(false);
+      setSelectedAdvocate(null);
+      alert('✅ Advocate profile updated successfully!');
+    } catch (error: any) {
+      alert(`❌ Update failed: ${error.message}`);
+    }
+  };
 
   if (isLoading) {
     return <DashboardSkeleton />;
@@ -185,8 +211,12 @@ export const AdvocateNetwork: React.FC = () => {
                         </p>
                       </div>
                     </div>
-                    <button className="px-4 py-2 text-sm font-medium text-brand-600 hover:bg-brand-50 rounded-lg transition-colors">
-                      View Profile
+                    <button
+                      onClick={() => handleEditAdvocate(advocate)}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-brand-600 hover:bg-brand-50 border-2 border-brand-200 rounded-lg transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Edit Profile
                     </button>
                   </div>
                 </div>
@@ -195,6 +225,18 @@ export const AdvocateNetwork: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Edit Advocate Modal */}
+      {showEditModal && selectedAdvocate && (
+        <EditAdvocateModal
+          advocate={selectedAdvocate}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedAdvocate(null);
+          }}
+          onSave={handleSaveAdvocate}
+        />
+      )}
     </div>
   );
 };
