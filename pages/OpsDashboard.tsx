@@ -230,7 +230,7 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
       `• Match with best-fit advocates based on expertise\n` +
       `• Balance workload across the advocate network\n` +
       `• Provide confidence scores and reasoning\n\n` +
-      `⏱️ This will take ~${Math.ceil(pendingCount / 60)} minute(s)\n\n` +
+      `⏱️ Estimated time: ~${Math.ceil(pendingCount / 12)} second(s) (optimized parallel processing)\n\n` +
       `Continue?`
     );
 
@@ -240,9 +240,17 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
       setShowAIProgress(true);
       setAIProgress({ current: 0, total: pendingCount, assignment: '' });
 
-      const result = await store.geminiAllocateAll((current, total, assignment) => {
-        setAIProgress({ current, total, assignment: assignment || '' });
-      });
+      // Use optimized batch processing (5 concurrent requests, 500ms between batches)
+      const result = await store.geminiAllocateAll(
+        (current, total, assignment) => {
+          setAIProgress({ current, total, assignment: assignment || '' });
+        },
+        {
+          batchSize: 5,           // Process 5 allocations in parallel
+          delayBetweenBatches: 500,  // 500ms delay between batches
+          maxRetries: 3           // Retry up to 3 times on failure
+        }
+      );
 
       setShowAIProgress(false);
 

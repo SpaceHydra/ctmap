@@ -732,10 +732,15 @@ class MockStore {
   }
 
   /**
-   * Bulk allocate using Gemini AI
+   * Bulk allocate using Gemini AI (optimized with parallel processing)
    */
   async geminiAllocateAll(
-    onProgress?: (current: number, total: number, assignment?: string) => void
+    onProgress?: (current: number, total: number, assignment?: string) => void,
+    options?: {
+      batchSize?: number;           // Number of concurrent allocations (default: 5)
+      delayBetweenBatches?: number; // Delay in ms between batches (default: 500ms)
+      maxRetries?: number;          // Max retries per allocation (default: 3)
+    }
   ): Promise<{
     total: number;
     successful: number;
@@ -753,36 +758,95 @@ class MockStore {
       a => a.status === AssignmentStatus.PENDING_ALLOCATION
     );
 
-    const results = [];
-    let successful = 0;
-    let failed = 0;
+    if (pendingAssignments.length === 0) {
+      return {
+        total: 0,
+        successful: 0,
+        failed: 0,
+        results: []
+      };
+    }
 
-    for (let i = 0; i < pendingAssignments.length; i++) {
-      const assignment = pendingAssignments[i];
+    const batchSize = options?.batchSize || 5;
+    const delayBetweenBatches = options?.delayBetweenBatches || 500;
+    const maxRetries = options?.maxRetries || 3;
 
-      // Progress callback
-      if (onProgress) {
-        onProgress(i + 1, pendingAssignments.length, assignment.lan);
+    const results: Array<any> = [];
+    let completed = 0;
+
+    console.log(`🚀 Starting optimized bulk AI allocation for ${pendingAssignments.length} assignments (batch size: ${batchSize})`);
+
+    // Helper function to allocate a single assignment with proper error handling
+    const allocateSingle = async (assignment: Assignment, retryCount = 0): Promise<any> => {
+      try {
+        const result = await this.geminiAllocateAssignment(assignment.id);
+        return {
+          assignmentId: assignment.id,
+          lan: assignment.lan,
+          ...result
+        };
+      } catch (error: any) {
+        // Retry logic
+        if (retryCount < maxRetries) {
+          const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 8000);
+          console.warn(`⚠️ Retry ${retryCount + 1}/${maxRetries} for ${assignment.lan} after ${backoffDelay}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          return allocateSingle(assignment, retryCount + 1);
+        }
+
+        console.error(`❌ Failed after ${retryCount} retries for ${assignment.lan}:`, error);
+        return {
+          assignmentId: assignment.id,
+          lan: assignment.lan,
+          success: false,
+          reason: `Failed after ${retryCount} retries: ${error.message || 'Unknown error'}`
+        };
+      }
+    };
+
+    // Process assignments in batches
+    for (let i = 0; i < pendingAssignments.length; i += batchSize) {
+      const batch = pendingAssignments.slice(i, i + batchSize);
+      const batchNumber = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(pendingAssignments.length / batchSize);
+
+      console.log(`📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} assignments)...`);
+
+      // Process batch in parallel
+      const batchPromises = batch.map(assignment => allocateSingle(assignment));
+      const batchResults = await Promise.allSettled(batchPromises);
+
+      // Extract results and update progress
+      for (const settledResult of batchResults) {
+        const result = settledResult.status === 'fulfilled'
+          ? settledResult.value
+          : {
+              assignmentId: batch[results.length]?.id || 'unknown',
+              lan: batch[results.length]?.lan || 'unknown',
+              success: false,
+              reason: 'Promise rejected unexpectedly'
+            };
+
+        results.push(result);
+        completed++;
+
+        // Call progress callback with assignment LAN
+        if (onProgress) {
+          onProgress(completed, pendingAssignments.length, result.lan);
+        }
       }
 
-      const result = await this.geminiAllocateAssignment(assignment.id);
-
-      if (result.success) {
-        successful++;
-      } else {
-        failed++;
-      }
-
-      results.push({
-        assignmentId: assignment.id,
-        ...result
-      });
-
-      // Small delay to avoid rate limiting
-      if (i < pendingAssignments.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Small delay between batches to avoid overwhelming the API
+      if (i + batchSize < pendingAssignments.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
       }
     }
+
+    // Calculate success/failure counts
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    console.log(`✅ Bulk allocation complete: ${successful} successful, ${failed} failed`);
 
     return {
       total: pendingAssignments.length,
