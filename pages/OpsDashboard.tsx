@@ -2,11 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { Assignment, AssignmentStatus, UserRole, User, ForfeitDetails, ForfeitReason } from '../types';
 import { store } from '../services/mockStore';
-import { Users, Briefcase, AlertTriangle, CheckSquare, Filter, ArrowRight, Activity, Globe, BarChart as BarChartIcon, Clock, TrendingUp, CheckCircle, Zap, X, XCircle, RefreshCw } from 'lucide-react';
+import { Users, Briefcase, AlertTriangle, CheckSquare, Filter, ArrowRight, Activity, Globe, BarChart as BarChartIcon, Clock, TrendingUp, CheckCircle, Zap, X, XCircle, RefreshCw, Copy, Tag } from 'lucide-react';
 import { StatsCard } from '../components/StatsCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { DashboardSkeleton } from '../components/LoadingSkeleton';
+import { AdvancedFilters } from '../components/AdvancedFilters';
+import { copyFiCodeToClipboard } from '../utils/exportHelpers';
 
 interface Props {
   onSelectAssignment: (id: string) => void;
@@ -14,6 +16,7 @@ interface Props {
 
 export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [filteredAssignments, setFilteredAssignments] = useState<Assignment[]>([]);
   const [filter, setFilter] = useState<AssignmentStatus | 'ALL'>('ALL');
   const [networkAvailability, setNetworkAvailability] = useState(0);
   const [throughput, setThroughput] = useState(0);
@@ -44,7 +47,9 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
   useEffect(() => {
     setIsLoading(true);
     const all = store.getAssignments();
-    setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
+    const assignmentsWithoutUnclaimed = all.filter(a => a.status !== AssignmentStatus.UNCLAIMED);
+    setAssignments(assignmentsWithoutUnclaimed);
+    setFilteredAssignments(assignmentsWithoutUnclaimed); // Initialize filtered assignments
 
     // Calculate Network Availability
     const advocates = store.getAdvocates();
@@ -67,21 +72,28 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
     setIsLoading(false);
   }, []);
 
-  // Apply status filter + quick filters
-  let filteredAssignments = filter === 'ALL'
-    ? assignments
-    : assignments.filter(a => a.status === filter);
+  // Handler for AdvancedFilters component
+  const handleAdvancedFilterChange = (filtered: Assignment[]) => {
+    let result = filtered;
 
-  // Apply quick filters
-  if (quickFilters.state !== 'ALL') {
-    filteredAssignments = filteredAssignments.filter(a => a.state === quickFilters.state);
-  }
-  if (quickFilters.productType !== 'ALL') {
-    filteredAssignments = filteredAssignments.filter(a => a.productType === quickFilters.productType);
-  }
-  if (quickFilters.hub !== 'ALL') {
-    filteredAssignments = filteredAssignments.filter(a => a.hubId === quickFilters.hub);
-  }
+    // Apply status filter on top of advanced filters
+    if (filter !== 'ALL') {
+      result = result.filter(a => a.status === filter);
+    }
+
+    // Apply quick filters on top
+    if (quickFilters.state !== 'ALL') {
+      result = result.filter(a => a.state === quickFilters.state);
+    }
+    if (quickFilters.productType !== 'ALL') {
+      result = result.filter(a => a.productType === quickFilters.productType);
+    }
+    if (quickFilters.hub !== 'ALL') {
+      result = result.filter(a => a.hubId === quickFilters.hub);
+    }
+
+    setFilteredAssignments(result);
+  };
 
   // Bulk selection handlers
   const handleToggleSelect = (id: string) => {
@@ -630,6 +642,13 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
 
         {/* Left Column: List & Filters */}
         <div className="lg:col-span-2 space-y-8">
+            {/* Advanced Filters */}
+            <AdvancedFilters
+              assignments={assignments}
+              onFilterChange={handleAdvancedFilterChange}
+              showExport={true}
+            />
+
             {/* Main Table */}
             <div className="bg-white rounded-2xl shadow-soft border border-slate-200 overflow-hidden flex flex-col">
             <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-white">
@@ -687,6 +706,7 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                       </th>
                     )}
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Assignment</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">FI Code</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Location</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Advocate</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
@@ -696,7 +716,7 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                 <tbody className="bg-white divide-y divide-slate-100">
                     {filteredAssignments.length === 0 ? (
                       <tr>
-                        <td colSpan={bulkMode ? 6 : 5} className="px-6 py-16 text-center">
+                        <td colSpan={bulkMode ? 7 : 6} className="px-6 py-16 text-center">
                           <div className="flex flex-col items-center justify-center">
                             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-3">
                               <Briefcase className="w-8 h-8 text-slate-300" />
@@ -745,6 +765,33 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                                     )}
                                   </div>
                                   <div className="text-sm text-slate-500 mt-0.5">{a.borrowerName}</div>
+                                </td>
+                                <td className="px-6 py-5">
+                                  {a.fiCode ? (
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-md">
+                                        <Tag className="w-3 h-3 text-purple-600" />
+                                        <span className="text-xs font-bold text-purple-900">{a.fiCode}</span>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          copyFiCodeToClipboard(a.fiCode!);
+                                          alert(`✓ Copied: ${a.fiCode}`);
+                                        }}
+                                        className="p-1 hover:bg-slate-100 rounded transition-colors"
+                                        title="Copy FI Code"
+                                      >
+                                        <Copy className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-slate-400 italic">Manual Entry</span>
+                                  )}
+                                  {a.externalSource && (
+                                    <div className="text-[10px] text-slate-400 mt-1">
+                                      Source: {a.externalSource}
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="px-6 py-5 text-sm text-slate-600">{a.district}, {a.state}</td>
                                 <td className="px-6 py-5 text-sm">
@@ -808,7 +855,7 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                             {/* Forfeit Details Expansion Row */}
                             {a.status === AssignmentStatus.FORFEITED && a.forfeitDetails && (
                               <tr key={`${a.id}-forfeit-details`} className="bg-orange-50 border-t-0">
-                                <td colSpan={bulkMode ? 6 : 5} className="px-6 py-4">
+                                <td colSpan={bulkMode ? 7 : 6} className="px-6 py-4">
                                   <div className="flex items-start gap-4 bg-white rounded-lg p-4 border border-orange-200">
                                     <div className="p-2 bg-orange-100 rounded-lg">
                                       <AlertTriangle className="w-5 h-5 text-orange-600" />

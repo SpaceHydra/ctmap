@@ -2,11 +2,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User, Assignment, AssignmentStatus } from '../types';
 import { store } from '../services/mockStore';
-import { Search, Upload, AlertCircle, CheckCircle, Clock, ArrowRight, Info, FileText, Save, ChevronLeft, Briefcase, Activity, PieChart as PieIcon, RefreshCw, UserCheck, XCircle, Loader2 } from 'lucide-react';
+import { Search, Upload, AlertCircle, CheckCircle, Clock, ArrowRight, Info, FileText, Save, ChevronLeft, Briefcase, Activity, PieChart as PieIcon, RefreshCw, UserCheck, XCircle, Loader2, Copy, Tag } from 'lucide-react';
 import { StatsCard } from '../components/StatsCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { TableSkeleton } from '../components/LoadingSkeleton';
+import { copyFiCodeToClipboard } from '../utils/exportHelpers';
 
 interface Props {
   user: User;
@@ -480,6 +481,12 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
                             <div>
                                   <div className="text-sm font-bold text-slate-900">{r.lan}</div>
                                   <div className="text-xs text-slate-500 mt-0.5">LAN Number</div>
+                                  {r.fiCode && (
+                                    <div className="mt-1 flex items-center gap-1">
+                                      <Tag className="w-3 h-3 text-purple-600" />
+                                      <span className="text-xs font-semibold text-purple-900">{r.fiCode}</span>
+                                    </div>
+                                  )}
                             </div>
                         </div>
                       </td>
@@ -595,6 +602,7 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
                         <thead className="bg-slate-50">
                             <tr>
                             <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Assignment Detail</th>
+                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">FI Code</th>
                             <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Scope</th>
                             <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Action</th>
@@ -602,7 +610,7 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
                             {myAssignments.length === 0 ? (
-                                <tr><td colSpan={6} className="px-6 py-16 text-center text-slate-400 text-sm">You haven't claimed any assignments yet.</td></tr>
+                                <tr><td colSpan={5} className="px-6 py-16 text-center text-slate-400 text-sm">You haven't claimed any assignments yet.</td></tr>
                             ) : (
                             myAssignments.slice(0, 5).map((a) => {
                                 const hasUnresolved = a.queries.some(q => !q.response);
@@ -619,6 +627,28 @@ export const BankDashboard: React.FC<Props> = ({ user, onSelectAssignment, initi
                                                 )}
                                             </div>
                                             <div className="text-sm text-slate-500 mt-0.5">{a.borrowerName}</div>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            {a.fiCode ? (
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-md">
+                                                        <Tag className="w-3 h-3 text-purple-600" />
+                                                        <span className="text-xs font-bold text-purple-900">{a.fiCode}</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            copyFiCodeToClipboard(a.fiCode!);
+                                                            alert(`✓ Copied: ${a.fiCode}`);
+                                                        }}
+                                                        className="p-1 hover:bg-slate-100 rounded transition-colors"
+                                                        title="Copy FI Code"
+                                                    >
+                                                        <Copy className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-slate-400 italic">Manual</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-5 whitespace-nowrap text-sm text-slate-600">
                                             <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">

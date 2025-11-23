@@ -184,16 +184,16 @@ export const TEST_OPS_USERS: User[] = [
 const generateAssignments = (): Assignment[] => {
   const assignments: Assignment[] = [];
   const states = [
-    { name: 'Maharashtra', districts: ['Mumbai', 'Pune', 'Nagpur', 'Thane', 'Nashik'] },
-    { name: 'Delhi', districts: ['New Delhi', 'South Delhi', 'East Delhi'] },
-    { name: 'Karnataka', districts: ['Bangalore', 'Mysore', 'Mangalore', 'Hubli'] },
-    { name: 'Tamil Nadu', districts: ['Chennai', 'Coimbatore', 'Madurai', 'Trichy'] },
-    { name: 'Telangana', districts: ['Hyderabad', 'Warangal', 'Nizamabad'] },
-    { name: 'West Bengal', districts: ['Kolkata', 'Howrah', 'Durgapur'] },
-    { name: 'Gujarat', districts: ['Ahmedabad', 'Surat', 'Vadodara'] },
-    { name: 'Rajasthan', districts: ['Jaipur', 'Udaipur', 'Jodhpur'] },
-    { name: 'Uttar Pradesh', districts: ['Lucknow', 'Kanpur', 'Agra', 'Varanasi'] },
-    { name: 'Haryana', districts: ['Gurgaon', 'Faridabad', 'Ghaziabad'] },
+    { name: 'Maharashtra', districts: ['Mumbai', 'Pune', 'Nagpur', 'Thane', 'Nashik'], code: 'MH' },
+    { name: 'Delhi', districts: ['New Delhi', 'South Delhi', 'East Delhi'], code: 'DL' },
+    { name: 'Karnataka', districts: ['Bangalore', 'Mysore', 'Mangalore', 'Hubli'], code: 'KA' },
+    { name: 'Tamil Nadu', districts: ['Chennai', 'Coimbatore', 'Madurai', 'Trichy'], code: 'TN' },
+    { name: 'Telangana', districts: ['Hyderabad', 'Warangal', 'Nizamabad'], code: 'TG' },
+    { name: 'West Bengal', districts: ['Kolkata', 'Howrah', 'Durgapur'], code: 'WB' },
+    { name: 'Gujarat', districts: ['Ahmedabad', 'Surat', 'Vadodara'], code: 'GJ' },
+    { name: 'Rajasthan', districts: ['Jaipur', 'Udaipur', 'Jodhpur'], code: 'RJ' },
+    { name: 'Uttar Pradesh', districts: ['Lucknow', 'Kanpur', 'Agra', 'Varanasi'], code: 'UP' },
+    { name: 'Haryana', districts: ['Gurgaon', 'Faridabad', 'Ghaziabad'], code: 'HR' },
   ];
 
   const borrowerNames = [
@@ -222,6 +222,11 @@ const generateAssignments = (): Assignment[] => {
     const property = properties[i % properties.length];
     const priority = priorities[i % priorities.length];
 
+    // 70% assignments have FI_code (from PropDD portal), 30% are manual entries
+    const hasFiCode = i % 10 < 7; // First 7 out of every 10 have FI_code
+    const fiCode = hasFiCode ? `FI-${state.code}-2024-${String(5000 + i).padStart(4, '0')}` : undefined;
+    const externalSource = hasFiCode ? 'PropDD' : 'Manual';
+
     const assignment: Assignment = {
       id: `asn_${String(i + 1).padStart(3, '0')}`,
       lan: `LN${10000 + i}`,
@@ -240,7 +245,12 @@ const generateAssignments = (): Assignment[] => {
       createdAt: new Date(Date.now() - Math.random() * 10 * 86400000).toISOString(), // Random within last 10 days
       documents: [],
       queries: [],
-      auditTrail: []
+      auditTrail: [],
+
+      // FI_code integration (PropDD portal)
+      fiCode,
+      externalSource,
+      externalReference: hasFiCode ? `https://propdd.hdfc.com/assignments/${5000 + i}` : undefined
     };
 
     assignments.push(assignment);
