@@ -212,13 +212,18 @@ ${JSON.stringify(advocatesData, null, 2)}
   }
 
   /**
-   * Bulk allocation using AI (sequential processing)
+   * Bulk allocation using AI (parallel batch processing with retry logic)
    */
   async bulkAllocateWithAI(
     assignments: Assignment[],
     advocates: User[],
     getWorkload: (advocateId: string) => number,
-    onProgress?: (current: number, total: number) => void
+    onProgress?: (current: number, total: number) => void,
+    options?: {
+      batchSize?: number;      // Number of concurrent requests (default: 5)
+      delayBetweenBatches?: number;  // Delay in ms between batches (default: 500ms)
+      maxRetries?: number;     // Max retries per allocation (default: 3)
+    }
   ): Promise<{
     total: number;
     successful: number;
@@ -232,36 +237,79 @@ ${JSON.stringify(advocatesData, null, 2)}
       confidence?: number;
     }>;
   }> {
-    const results = [];
-    let successful = 0;
-    let failed = 0;
+    const batchSize = options?.batchSize || 5;
+    const delayBetweenBatches = options?.delayBetweenBatches || 500;
+    const maxRetries = options?.maxRetries || 3;
 
-    for (let i = 0; i < assignments.length; i++) {
-      const assignment = assignments[i];
+    const results: Array<any> = [];
+    let completed = 0;
 
-      // Call progress callback
-      if (onProgress) {
-        onProgress(i + 1, assignments.length);
+    // Helper function to allocate with retry logic
+    const allocateWithRetry = async (
+      assignment: Assignment,
+      retryCount = 0
+    ): Promise<any> => {
+      try {
+        const result = await this.allocateWithAI(assignment, advocates, getWorkload);
+        return {
+          assignmentId: assignment.id,
+          ...result
+        };
+      } catch (error: any) {
+        // Retry logic for rate limiting or transient errors
+        if (retryCount < maxRetries && this.isRetryableError(error)) {
+          const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 8000);
+          console.warn(`⚠️ Retry ${retryCount + 1}/${maxRetries} for ${assignment.lan} after ${backoffDelay}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          return allocateWithRetry(assignment, retryCount + 1);
+        }
+
+        // Max retries exceeded or non-retryable error
+        console.error(`❌ Failed after ${retryCount} retries for ${assignment.lan}:`, error);
+        return {
+          assignmentId: assignment.id,
+          success: false,
+          reason: `Failed after ${retryCount} retries: ${error.message || 'Unknown error'}`
+        };
+      }
+    };
+
+    // Process assignments in batches
+    for (let i = 0; i < assignments.length; i += batchSize) {
+      const batch = assignments.slice(i, i + batchSize);
+
+      // Process batch in parallel
+      const batchPromises = batch.map(assignment => allocateWithRetry(assignment));
+      const batchResults = await Promise.allSettled(batchPromises);
+
+      // Extract results from settled promises
+      for (const settledResult of batchResults) {
+        const result = settledResult.status === 'fulfilled'
+          ? settledResult.value
+          : {
+              assignmentId: batch[results.length]?.id || 'unknown',
+              success: false,
+              reason: 'Promise rejected unexpectedly'
+            };
+
+        results.push(result);
+        completed++;
+
+        // Call progress callback
+        if (onProgress) {
+          onProgress(completed, assignments.length);
+        }
       }
 
-      // Small delay to avoid rate limiting
-      if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Small delay between batches to avoid overwhelming the API
+      if (i + batchSize < assignments.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
       }
-
-      const result = await this.allocateWithAI(assignment, advocates, getWorkload);
-
-      if (result.success) {
-        successful++;
-      } else {
-        failed++;
-      }
-
-      results.push({
-        assignmentId: assignment.id,
-        ...result
-      });
     }
+
+    // Calculate success/failure counts
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
 
     return {
       total: assignments.length,
@@ -269,6 +317,25 @@ ${JSON.stringify(advocatesData, null, 2)}
       failed,
       results
     };
+  }
+
+  /**
+   * Check if error is retryable (rate limiting, network issues, etc.)
+   */
+  private isRetryableError(error: any): boolean {
+    const errorMessage = error?.message?.toLowerCase() || '';
+    const statusCode = error?.status || error?.statusCode;
+
+    // Retry on rate limiting (429), server errors (5xx), or network issues
+    return (
+      statusCode === 429 ||
+      statusCode >= 500 ||
+      errorMessage.includes('rate limit') ||
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('network') ||
+      errorMessage.includes('ECONNRESET') ||
+      errorMessage.includes('ETIMEDOUT')
+    );
   }
 }
 
