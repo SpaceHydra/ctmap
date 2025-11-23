@@ -2,11 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { User, Assignment, AssignmentStatus, ForfeitReason } from '../types';
 import { store } from '../services/mockStore';
-import { FileText, AlertCircle, Clock, CheckCircle, ArrowRight, BarChart3, Hourglass, Calendar, TrendingUp, Award, XCircle } from 'lucide-react';
+import { FileText, AlertCircle, Clock, CheckCircle, ArrowRight, BarChart3, Hourglass, Calendar, TrendingUp, Award, XCircle, Tag, Copy } from 'lucide-react';
 import { StatsCard } from '../components/StatsCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { DashboardSkeleton } from '../components/LoadingSkeleton';
 import { ForfeitModal } from '../components/ForfeitModal';
+import { copyFiCodeToClipboard } from '../utils/exportHelpers';
 
 interface Props {
   user: User;
@@ -147,6 +148,25 @@ export const AdvocateDashboard: React.FC<Props> = ({ user, onSelectAssignment })
                                         )}
                                       </div>
                                       <div className="text-sm text-slate-500 mt-0.5">{a.borrowerName} • {a.district}</div>
+                                      {a.fiCode && (
+                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                          <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-50 border border-purple-200 rounded-md">
+                                            <Tag className="w-3 h-3 text-purple-600" />
+                                            <span className="text-xs font-bold text-purple-900">{a.fiCode}</span>
+                                          </div>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              copyFiCodeToClipboard(a.fiCode!);
+                                              alert(`✓ Copied: ${a.fiCode}`);
+                                            }}
+                                            className="p-0.5 hover:bg-slate-100 rounded transition-colors"
+                                            title="Copy FI Code"
+                                          >
+                                            <Copy className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                 </div>
                                 </td>
