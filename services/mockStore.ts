@@ -1,5 +1,5 @@
 
-import { Assignment, AssignmentStatus, User, Hub, UserRole, AuditLogEntry, TransferRequest } from '../types';
+import { Assignment, AssignmentStatus, User, Hub, UserRole, AuditLogEntry, TransferRequest, ForfeitReason, ForfeitDetails } from '../types';
 import { INITIAL_ASSIGNMENTS as SEED_DATA, MOCK_HUBS as SEED_HUBS, MOCK_USERS as SEED_USERS } from '../constants';
 import { TEST_ASSIGNMENTS, TEST_HUBS, TEST_USERS } from '../testData';
 import { geminiAllocationService } from './geminiAllocation';
@@ -884,6 +884,280 @@ class MockStore {
       failed,
       results
     };
+  }
+
+  // -- Forfeit & Re-allocation Management --
+
+  /**
+   * Advocate forfeits an assignment
+   * Returns assignment to FORFEITED status for CT Ops re-allocation
+   */
+  forfeitAssignment(
+    assignmentId: string,
+    advocateId: string,
+    reason: ForfeitReason,
+    details: string
+  ): Assignment {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      throw new Error('Assignment not found');
+    }
+
+    // Validation: Only assigned advocate can forfeit
+    if (assignment.advocateId !== advocateId) {
+      throw new Error('Only the assigned advocate can forfeit this assignment');
+    }
+
+    // Validation: Can only forfeit if ALLOCATED, IN_PROGRESS, or QUERY_RAISED
+    const validStatuses = [
+      AssignmentStatus.ALLOCATED,
+      AssignmentStatus.IN_PROGRESS,
+      AssignmentStatus.QUERY_RAISED
+    ];
+    if (!validStatuses.includes(assignment.status)) {
+      throw new Error(
+        `Cannot forfeit assignment in ${assignment.status} status. ` +
+        `Only ALLOCATED, IN_PROGRESS, or QUERY_RAISED assignments can be forfeited.`
+      );
+    }
+
+    // Validation: Details must be meaningful
+    if (!details || details.trim().length < 20) {
+      throw new Error('Please provide detailed reason (minimum 20 characters)');
+    }
+
+    const advocate = this.getUserById(advocateId);
+    if (!advocate) {
+      throw new Error('Advocate not found');
+    }
+
+    // Track forfeit count
+    const forfeitCount = (assignment.forfeitDetails?.forfeitCount || 0) + 1;
+
+    // Flag if assignment has been forfeited multiple times
+    if (forfeitCount > 2) {
+      console.warn(
+        `⚠️ Assignment ${assignment.lan} has been forfeited ${forfeitCount} times! ` +
+        `May indicate problematic assignment - review required.`
+      );
+    }
+
+    const forfeitDetails: ForfeitDetails = {
+      reason,
+      details: details.trim(),
+      forfeitedBy: advocateId,
+      forfeitedByName: advocate.name,
+      forfeitedAt: new Date().toISOString(),
+      previousAdvocateId: assignment.advocateId,
+      forfeitCount
+    };
+
+    // Track all previous advocates
+    const previousAdvocates = assignment.previousAdvocates || [];
+    if (assignment.advocateId && !previousAdvocates.includes(assignment.advocateId)) {
+      previousAdvocates.push(assignment.advocateId);
+    }
+
+    const updated: Assignment = {
+      ...assignment,
+      status: AssignmentStatus.FORFEITED,
+      advocateId: undefined,          // Remove advocate assignment
+      allocatedAt: undefined,         // Clear allocation timestamp
+      forfeitDetails,
+      previousAdvocates,
+      isForfeitedAssignment: true,
+      auditTrail: [
+        ...(assignment.auditTrail || []),
+        {
+          action: 'FORFEITED',
+          performedBy: advocateId,
+          timestamp: new Date().toISOString(),
+          details: `Forfeited by ${advocate.name}. Reason: ${reason}. Details: ${details}`
+        }
+      ]
+    };
+
+    this.assignments = this.assignments.map(a =>
+      a.id === assignmentId ? updated : a
+    );
+    this.saveToStorage();
+
+    // Log for monitoring
+    console.log(
+      `📤 Assignment ${assignment.lan} forfeited by ${advocate.name}. ` +
+      `Reason: ${reason} (Forfeit #${forfeitCount})`
+    );
+
+    return updated;
+  }
+
+  /**
+   * Re-allocate a forfeited assignment
+   * Excludes previous advocates from re-allocation
+   */
+  reAllocateForfeitedAssignment(
+    assignmentId: string,
+    newAdvocateId: string,
+    opsUserId: string,
+    notes?: string
+  ): Assignment {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      throw new Error('Assignment not found');
+    }
+
+    if (assignment.status !== AssignmentStatus.FORFEITED) {
+      throw new Error('Only FORFEITED assignments can be re-allocated via this method');
+    }
+
+    // Validation: Don't re-allocate to previous advocate who forfeited
+    if (assignment.previousAdvocates?.includes(newAdvocateId)) {
+      const previousAdv = this.getUserById(newAdvocateId);
+      throw new Error(
+        `Cannot re-allocate to ${previousAdv?.name} - this advocate previously forfeited this assignment`
+      );
+    }
+
+    const newAdvocate = this.getUserById(newAdvocateId);
+    if (!newAdvocate || newAdvocate.role !== UserRole.ADVOCATE) {
+      throw new Error('Invalid advocate selected');
+    }
+
+    // Check workload
+    const workload = this.getAdvocateWorkload(newAdvocateId);
+    if (workload >= 5) {
+      throw new Error(
+        `${newAdvocate.name} is at capacity (${workload}/5 assignments). ` +
+        `Please select a different advocate.`
+      );
+    }
+
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 7);
+
+    const updated: Assignment = {
+      ...assignment,
+      status: AssignmentStatus.ALLOCATED,
+      advocateId: newAdvocateId,
+      allocatedAt: new Date().toISOString(),
+      dueDate: dueDate.toISOString(),
+      auditTrail: [
+        ...(assignment.auditTrail || []),
+        {
+          action: 'RE_ALLOCATED_AFTER_FORFEIT',
+          performedBy: opsUserId,
+          timestamp: new Date().toISOString(),
+          details:
+            `Re-allocated to ${newAdvocate.name} after forfeit by ` +
+            `${assignment.forfeitDetails?.forfeitedByName}. ` +
+            (notes ? `Notes: ${notes}` : '')
+        }
+      ]
+    };
+
+    this.assignments = this.assignments.map(a =>
+      a.id === assignmentId ? updated : a
+    );
+    this.saveToStorage();
+
+    console.log(
+      `♻️ Forfeited assignment ${assignment.lan} re-allocated to ${newAdvocate.name}`
+    );
+
+    return updated;
+  }
+
+  /**
+   * Get all forfeited assignments for CT Ops queue
+   */
+  getForfeitedAssignments(): Assignment[] {
+    return this.assignments
+      .filter(a => a.status === AssignmentStatus.FORFEITED)
+      .sort((a, b) => {
+        // Sort by forfeit time (most recent first)
+        const timeA = new Date(a.forfeitDetails?.forfeitedAt || 0).getTime();
+        const timeB = new Date(b.forfeitDetails?.forfeitedAt || 0).getTime();
+        return timeB - timeA;
+      });
+  }
+
+  /**
+   * Auto re-allocate forfeited assignment using smart engine
+   * Excludes previous advocates who forfeited
+   */
+  autoReAllocateForfeitedAssignment(
+    assignmentId: string
+  ): { success: boolean; advocateId?: string; reason?: string } {
+    const assignment = this.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      return { success: false, reason: 'Assignment not found' };
+    }
+
+    if (assignment.status !== AssignmentStatus.FORFEITED) {
+      return { success: false, reason: 'Assignment is not in FORFEITED status' };
+    }
+
+    // Get available advocates, EXCLUDING those who previously forfeited
+    const advocates = this.getAdvocates();
+    const availableAdvocates = advocates.filter(adv => {
+      const workload = this.getAdvocateWorkload(adv.id);
+      const notPreviouslyForfeited = !assignment.previousAdvocates?.includes(adv.id);
+      return workload < 5 && notPreviouslyForfeited;
+    });
+
+    if (availableAdvocates.length === 0) {
+      return {
+        success: false,
+        reason: 'No suitable advocates available (excluding previous advocates who forfeited)'
+      };
+    }
+
+    // Use existing scoring algorithm
+    const scoredAdvocates = availableAdvocates.map(adv => {
+      let score = 0;
+
+      // Location match
+      const stateMatch = adv.states?.includes(assignment.state);
+      const districtMatch = adv.districts?.includes(assignment.district);
+      if (stateMatch && districtMatch) score += 100;
+      else if (stateMatch) score += 50;
+
+      // Product expertise
+      if (adv.expertise?.includes(assignment.productType)) score += 30;
+
+      // Workload
+      const workload = this.getAdvocateWorkload(adv.id);
+      score += (5 - workload) * 10;
+
+      // Hub alignment
+      if (adv.hubId === assignment.hubId) score += 20;
+
+      return { advocate: adv, score };
+    });
+
+    scoredAdvocates.sort((a, b) => b.score - a.score);
+
+    const bestMatch = scoredAdvocates[0];
+    if (!bestMatch) {
+      return { success: false, reason: 'No suitable advocate found' };
+    }
+
+    try {
+      this.reAllocateForfeitedAssignment(
+        assignmentId,
+        bestMatch.advocate.id,
+        'AUTO_SYSTEM',
+        `Auto re-allocated after forfeit (score: ${bestMatch.score})`
+      );
+
+      return {
+        success: true,
+        advocateId: bestMatch.advocate.id,
+        reason: `Matched to ${bestMatch.advocate.name} (score: ${bestMatch.score})`
+      };
+    } catch (error: any) {
+      return { success: false, reason: `Re-allocation failed: ${error.message}` };
+    }
   }
 
   // -- Test Data Management --

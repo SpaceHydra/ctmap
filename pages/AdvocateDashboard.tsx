@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Assignment, AssignmentStatus } from '../types';
+import { User, Assignment, AssignmentStatus, ForfeitReason } from '../types';
 import { store } from '../services/mockStore';
-import { FileText, AlertCircle, Clock, CheckCircle, ArrowRight, BarChart3, Hourglass, Calendar, TrendingUp, Award } from 'lucide-react';
+import { FileText, AlertCircle, Clock, CheckCircle, ArrowRight, BarChart3, Hourglass, Calendar, TrendingUp, Award, XCircle } from 'lucide-react';
 import { StatsCard } from '../components/StatsCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { DashboardSkeleton } from '../components/LoadingSkeleton';
+import { ForfeitModal } from '../components/ForfeitModal';
 
 interface Props {
   user: User;
@@ -15,13 +16,38 @@ interface Props {
 export const AdvocateDashboard: React.FC<Props> = ({ user, onSelectAssignment }) => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showForfeitModal, setShowForfeitModal] = useState(false);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+
+  const refreshAssignments = () => {
+    const all = store.getAssignments();
+    setAssignments(all.filter(a => a.advocateId === user.id));
+  };
 
   useEffect(() => {
     setIsLoading(true);
-    const all = store.getAssignments();
-    setAssignments(all.filter(a => a.advocateId === user.id));
+    refreshAssignments();
     setIsLoading(false);
   }, [user.id]);
+
+  const handleForfeit = (assignment: Assignment) => {
+    setSelectedAssignment(assignment);
+    setShowForfeitModal(true);
+  };
+
+  const handleForfeitConfirm = (reason: ForfeitReason, details: string) => {
+    if (!selectedAssignment) return;
+
+    try {
+      store.forfeitAssignment(selectedAssignment.id, user.id, reason, details);
+      setShowForfeitModal(false);
+      setSelectedAssignment(null);
+      refreshAssignments();
+      alert(`✅ Assignment ${selectedAssignment.lan} has been forfeited successfully.\n\nCT Ops has been notified and will re-allocate it shortly.`);
+    } catch (error: any) {
+      alert(`❌ Failed to forfeit: ${error.message}`);
+    }
+  };
 
   const stats = {
     new: assignments.filter(a => a.status === AssignmentStatus.ALLOCATED).length,
@@ -137,12 +163,26 @@ export const AdvocateDashboard: React.FC<Props> = ({ user, onSelectAssignment })
                                     ) : <span className="text-slate-400">-</span>}
                                 </td>
                                 <td className="px-6 py-5 text-right">
-                                <button
-                                  onClick={() => onSelectAssignment(a.id)}
-                                  className="text-brand-600 hover:text-brand-700 font-medium flex items-center justify-end gap-1 ml-auto group-hover:gap-2 transition-all"
-                                >
-                                    Open Case <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                </button>
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => onSelectAssignment(a.id)}
+                                    className="text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1 group-hover:gap-2 transition-all"
+                                  >
+                                      Open Case <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                                  </button>
+                                  {(a.status === AssignmentStatus.ALLOCATED ||
+                                    a.status === AssignmentStatus.IN_PROGRESS ||
+                                    a.status === AssignmentStatus.QUERY_RAISED) && (
+                                    <button
+                                      onClick={() => handleForfeit(a)}
+                                      className="text-red-600 hover:text-red-800 font-semibold text-sm flex items-center gap-1 px-2 py-1 hover:bg-red-50 rounded transition-colors"
+                                      title="Forfeit this assignment"
+                                    >
+                                      <XCircle className="w-4 h-4" />
+                                      Forfeit
+                                    </button>
+                                  )}
+                                </div>
                                 </td>
                             </tr>
                             );
@@ -238,6 +278,18 @@ export const AdvocateDashboard: React.FC<Props> = ({ user, onSelectAssignment })
               </div>
           </div>
       </div>
+
+      {/* Forfeit Modal */}
+      {showForfeitModal && selectedAssignment && (
+        <ForfeitModal
+          assignment={selectedAssignment}
+          onClose={() => {
+            setShowForfeitModal(false);
+            setSelectedAssignment(null);
+          }}
+          onConfirm={handleForfeitConfirm}
+        />
+      )}
     </div>
   );
 };

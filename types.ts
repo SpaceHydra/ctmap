@@ -15,13 +15,34 @@ export enum AssignmentStatus {
   QUERY_RAISED = 'QUERY_RAISED', // Advocate asked q
   PENDING_APPROVAL = 'PENDING_APPROVAL', // Report submitted
   COMPLETED = 'COMPLETED', // Approved
-  REJECTED = 'REJECTED' // Rework needed
+  REJECTED = 'REJECTED', // Rework needed
+  FORFEITED = 'FORFEITED' // Advocate forfeited, needs re-allocation
 }
 
 export enum ProductType {
   HL = 'Home Loan',
   LAP = 'Loan Against Property',
   BL = 'Business Loan'
+}
+
+export enum ForfeitReason {
+  TOO_COMPLEX = 'Too Complex / Beyond Expertise',
+  CONFLICT_OF_INTEREST = 'Conflict of Interest',
+  OVERLOADED = 'Overloaded with Work',
+  EMERGENCY = 'Personal/Medical Emergency',
+  ACCESS_ISSUES = 'Property Access Issues',
+  CLIENT_ISSUES = 'Client Relationship Issues',
+  OTHER = 'Other'
+}
+
+export interface ForfeitDetails {
+  reason: ForfeitReason;
+  details: string;
+  forfeitedBy: string;         // Advocate user ID
+  forfeitedByName: string;      // Advocate name
+  forfeitedAt: string;          // ISO timestamp
+  previousAdvocateId: string;   // Track who forfeited
+  forfeitCount: number;         // How many times forfeited (flag if > 1)
 }
 
 export interface User {
@@ -137,4 +158,9 @@ export interface Assignment {
 
   // Audit
   auditTrail: AuditLogEntry[];
+
+  // Forfeit tracking
+  forfeitDetails?: ForfeitDetails;
+  previousAdvocates?: string[];  // Track all advocates who worked on this
+  isForfeitedAssignment?: boolean; // Flag for quick filtering
 }

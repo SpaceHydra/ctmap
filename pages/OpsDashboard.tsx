@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Assignment, AssignmentStatus, UserRole, User } from '../types';
+import { Assignment, AssignmentStatus, UserRole, User, ForfeitDetails, ForfeitReason } from '../types';
 import { store } from '../services/mockStore';
-import { Users, Briefcase, AlertTriangle, CheckSquare, Filter, ArrowRight, Activity, Globe, BarChart as BarChartIcon, Clock, TrendingUp, CheckCircle, Zap, X } from 'lucide-react';
+import { Users, Briefcase, AlertTriangle, CheckSquare, Filter, ArrowRight, Activity, Globe, BarChart as BarChartIcon, Clock, TrendingUp, CheckCircle, Zap, X, XCircle, RefreshCw } from 'lucide-react';
 import { StatsCard } from '../components/StatsCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -35,6 +35,11 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
   const [aiProgress, setAIProgress] = useState({ current: 0, total: 0, assignment: '' });
   const [isTestDataLoaded, setIsTestDataLoaded] = useState(false);
   const [geminiAvailable, setGeminiAvailable] = useState(false);
+
+  // Re-allocation state for forfeited assignments
+  const [showReAllocateModal, setShowReAllocateModal] = useState(false);
+  const [selectedReAllocateAssignment, setSelectedReAllocateAssignment] = useState<Assignment | null>(null);
+  const [reAllocateAdvocate, setReAllocateAdvocate] = useState<string>('');
 
   useEffect(() => {
     setIsLoading(true);
@@ -272,6 +277,148 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
     }
   };
 
+  // Forfeit re-allocation handlers
+  const handleManualReAllocate = (assignment: Assignment) => {
+    setSelectedReAllocateAssignment(assignment);
+    setShowReAllocateModal(true);
+  };
+
+  const handleManualReAllocateConfirm = () => {
+    if (!selectedReAllocateAssignment || !reAllocateAdvocate) {
+      alert('⚠️ Please select an advocate');
+      return;
+    }
+
+    try {
+      // Get current user (CT Ops) - in real app, this would come from auth context
+      const currentUser = store.getCurrentUser();
+      const opsUserId = currentUser?.id || 'CT_OPS_SYSTEM';
+
+      store.reAllocateForfeitedAssignment(
+        selectedReAllocateAssignment.id,
+        reAllocateAdvocate,
+        opsUserId,
+        `Manual re-allocation by CT Ops`
+      );
+
+      const advocate = store.getAdvocates().find(adv => adv.id === reAllocateAdvocate);
+      alert(`✅ Assignment ${selectedReAllocateAssignment.lan} re-allocated to ${advocate?.name || 'advocate'}!`);
+
+      // Refresh data
+      const all = store.getAssignments();
+      setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
+
+      setShowReAllocateModal(false);
+      setSelectedReAllocateAssignment(null);
+      setReAllocateAdvocate('');
+    } catch (error: any) {
+      alert(`❌ Re-allocation failed: ${error.message}`);
+    }
+  };
+
+  const handleAutoReAllocate = (assignment: Assignment) => {
+    const confirmed = window.confirm(
+      `⚙️ Auto Re-Allocate Assignment ${assignment.lan}?\n\n` +
+      `The smart engine will find the best matching advocate based on:\n` +
+      `• Location match (state + district)\n` +
+      `• Product expertise\n` +
+      `• Current workload\n` +
+      `• Hub alignment\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const result = store.autoReAllocateForfeitedAssignment(assignment.id);
+
+      if (!result.success) {
+        alert(`❌ Auto re-allocation failed: ${result.reason || 'Unknown error'}`);
+        return;
+      }
+
+      const advocate = store.getAdvocates().find(adv => adv.id === result.advocateId);
+
+      alert(
+        `✅ Auto Re-Allocation Successful!\n\n` +
+        `Assignment: ${assignment.lan}\n` +
+        `Allocated to: ${advocate?.name || 'Unknown'}\n` +
+        `${result.reason || 'Smart engine found the best match'}`
+      );
+
+      // Refresh data
+      const all = store.getAssignments();
+      setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
+    } catch (error: any) {
+      alert(`❌ Auto re-allocation failed: ${error.message}`);
+    }
+  };
+
+  const handleAIReAllocate = async (assignment: Assignment) => {
+    if (!geminiAvailable) {
+      alert(
+        `❌ Gemini AI Not Configured\n\n` +
+        `To use AI re-allocation:\n` +
+        `1. Get your API key from: https://makersuite.google.com/app/apikey\n` +
+        `2. Create a .env file in the project root\n` +
+        `3. Add: VITE_GEMINI_API_KEY=your_api_key_here\n` +
+        `4. Restart the dev server`
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `🤖 AI Re-Allocate Assignment ${assignment.lan} using Gemini?\n\n` +
+      `Gemini AI will:\n` +
+      `• Deeply analyze assignment requirements\n` +
+      `• Consider why previous advocate forfeited\n` +
+      `• Match with best-fit advocate (avoiding previous advocate)\n` +
+      `• Provide confidence score and reasoning\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setShowAIProgress(true);
+      setAIProgress({ current: 1, total: 1, assignment: assignment.lan });
+
+      const result = await store.geminiAllocateAll(
+        (current, total, assignmentId) => {
+          setAIProgress({ current, total, assignment: assignmentId || '' });
+        },
+        {
+          batchSize: 1,
+          delayBetweenBatches: 0,
+          maxRetries: 3
+        }
+      );
+
+      setShowAIProgress(false);
+
+      if (result.successful > 0) {
+        const updatedAssignment = store.getAssignments().find(a => a.id === assignment.id);
+        const advocate = store.getAdvocates().find(adv => adv.id === updatedAssignment?.advocateId);
+
+        alert(
+          `✅ AI Re-Allocation Successful!\n\n` +
+          `Assignment: ${assignment.lan}\n` +
+          `Allocated to: ${advocate?.name || 'Unknown'}\n` +
+          `AI analyzed the forfeit reason and found the best match!`
+        );
+
+        // Refresh data
+        const all = store.getAssignments();
+        setAssignments(all.filter(a => a.status !== AssignmentStatus.UNCLAIMED));
+      } else {
+        throw new Error('AI re-allocation failed');
+      }
+    } catch (error: any) {
+      setShowAIProgress(false);
+      alert(`❌ AI re-allocation failed: ${error.message || 'Unknown error'}`);
+    }
+  };
+
   // Get unique values for quick filters
   const uniqueStates = [...new Set(assignments.map(a => a.state))];
   const uniqueProducts = [...new Set(assignments.map(a => a.productType))];
@@ -281,6 +428,7 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
   const stats = {
     pendingAllocation: assignments.filter(a => a.status === AssignmentStatus.PENDING_ALLOCATION).length,
     approvalNeeded: assignments.filter(a => a.status === AssignmentStatus.PENDING_APPROVAL).length,
+    forfeited: assignments.filter(a => a.status === AssignmentStatus.FORFEITED).length,
     total: assignments.length,
     stuck: assignments.filter(a => {
         if (!a.createdAt) return false;
@@ -374,31 +522,57 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
         </div>
       </div>
       
+      {/* Forfeit Alert Banner */}
+      {stats.forfeited > 0 && (
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-5 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-full bg-orange-500 text-white">
+              <XCircle className="w-6 h-6" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-lg font-bold text-orange-900 mb-1">
+                ⚠️ {stats.forfeited} Forfeited Assignment{stats.forfeited > 1 ? 's' : ''} Require{stats.forfeited === 1 ? 's' : ''} Re-Allocation
+              </h4>
+              <p className="text-sm text-orange-700">
+                Advocates have forfeited assignments that need to be re-allocated to other advocates.
+                Use the <strong>FORFEITED</strong> filter below to view and manage these assignments.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pipeline Health Tiles */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatsCard 
-            title="Pending Allocation" 
-            value={stats.pendingAllocation} 
-            icon={AlertTriangle} 
-            colorClass="bg-rose-500 text-rose-600" 
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <StatsCard
+            title="Pending Allocation"
+            value={stats.pendingAllocation}
+            icon={AlertTriangle}
+            colorClass="bg-rose-500 text-rose-600"
         />
-        <StatsCard 
-            title="Network Availability" 
-            value={`${networkAvailability}%`} 
-            icon={Globe} 
-            colorClass="bg-sky-500 text-sky-600" 
+        <StatsCard
+            title="Forfeited"
+            value={stats.forfeited}
+            icon={XCircle}
+            colorClass="bg-orange-500 text-orange-600"
         />
-        <StatsCard 
-            title="Approval Queue" 
-            value={stats.approvalNeeded} 
-            icon={CheckSquare} 
-            colorClass="bg-purple-500 text-purple-600" 
+        <StatsCard
+            title="Network Availability"
+            value={`${networkAvailability}%`}
+            icon={Globe}
+            colorClass="bg-sky-500 text-sky-600"
         />
-        <StatsCard 
-            title="Today's Throughput" 
-            value={throughput} 
-            icon={Activity} 
-            colorClass="bg-emerald-500 text-emerald-600" 
+        <StatsCard
+            title="Approval Queue"
+            value={stats.approvalNeeded}
+            icon={CheckSquare}
+            colorClass="bg-purple-500 text-purple-600"
+        />
+        <StatsCard
+            title="Today's Throughput"
+            value={throughput}
+            icon={Activity}
+            colorClass="bg-emerald-500 text-emerald-600"
         />
       </div>
 
@@ -496,6 +670,7 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                     >
                         <option value="ALL">All Statuses</option>
                         <option value={AssignmentStatus.PENDING_ALLOCATION}>Pending Allocation</option>
+                        <option value={AssignmentStatus.FORFEITED}>⚠️ Forfeited ({stats.forfeited})</option>
                         <option value={AssignmentStatus.IN_PROGRESS}>In Progress</option>
                         <option value={AssignmentStatus.PENDING_APPROVAL}>Pending Approval</option>
                     </select>
@@ -538,7 +713,8 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                         const isSelectable = a.status === AssignmentStatus.PENDING_ALLOCATION;
                         const isSelected = selectedIds.includes(a.id);
                         return (
-                            <tr key={a.id} className={`hover:bg-slate-50 group transition-colors ${isSelected ? 'bg-brand-50' : ''}`}>
+                            <>
+                            <tr key={a.id} className={`hover:bg-slate-50 group transition-colors ${isSelected ? 'bg-brand-50' : ''} ${a.status === AssignmentStatus.FORFEITED ? 'bg-orange-50/50' : ''}`}>
                                 {bulkMode && (
                                   <td className="px-4 py-5">
                                     {isSelectable ? (
@@ -556,6 +732,11 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                                 <td className="px-6 py-5">
                                   <div className="flex items-center gap-2">
                                     <div className="text-sm font-bold text-slate-900">{a.lan}</div>
+                                    {a.status === AssignmentStatus.FORFEITED && (
+                                      <span className="px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-md">
+                                        FORFEITED
+                                      </span>
+                                    )}
                                     {hasUnresolved && (
                                         <span className="relative flex h-2 w-2" title="Unresolved Queries">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
@@ -567,7 +748,12 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                                 </td>
                                 <td className="px-6 py-5 text-sm text-slate-600">{a.district}, {a.state}</td>
                                 <td className="px-6 py-5 text-sm">
-                                  {advocate ? (
+                                  {a.status === AssignmentStatus.FORFEITED && a.forfeitDetails ? (
+                                    <div className="text-orange-600 font-medium flex items-center gap-1">
+                                      <XCircle className="w-4 h-4" />
+                                      Forfeited by {a.forfeitDetails.forfeitedByName}
+                                    </div>
+                                  ) : advocate ? (
                                     <div className="flex items-center gap-2">
                                       <div className="w-8 h-8 rounded-full bg-brand-50 flex items-center justify-center text-brand-600 font-bold text-xs border border-brand-100">
                                         {advocate.name?.charAt(0)}
@@ -580,14 +766,81 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                                 </td>
                                 <td className="px-6 py-5"><StatusBadge status={a.status} /></td>
                                 <td className="px-6 py-5 text-right">
-                                    <button
-                                        onClick={() => onSelectAssignment(a.id)}
-                                        className="text-brand-600 hover:text-brand-700 font-medium flex items-center justify-end gap-1 ml-auto group-hover:gap-2 transition-all"
-                                    >
-                                        Manage <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                                    </button>
+                                    {a.status === AssignmentStatus.FORFEITED ? (
+                                      <div className="flex items-center gap-2 justify-end">
+                                        <button
+                                          onClick={() => handleManualReAllocate(a)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-all"
+                                          title="Manually select an advocate"
+                                        >
+                                          <Users className="w-3 h-3" />
+                                          Manual
+                                        </button>
+                                        <button
+                                          onClick={() => handleAutoReAllocate(a)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition-all"
+                                          title="Auto-allocate using smart engine"
+                                        >
+                                          <RefreshCw className="w-3 h-3" />
+                                          Auto
+                                        </button>
+                                        {geminiAvailable && (
+                                          <button
+                                            onClick={() => handleAIReAllocate(a)}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all"
+                                            title="AI-powered re-allocation"
+                                          >
+                                            <Zap className="w-3 h-3" />
+                                            AI
+                                          </button>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <button
+                                          onClick={() => onSelectAssignment(a.id)}
+                                          className="text-brand-600 hover:text-brand-700 font-medium flex items-center justify-end gap-1 ml-auto group-hover:gap-2 transition-all"
+                                      >
+                                          Manage <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                                      </button>
+                                    )}
                                 </td>
                             </tr>
+                            {/* Forfeit Details Expansion Row */}
+                            {a.status === AssignmentStatus.FORFEITED && a.forfeitDetails && (
+                              <tr key={`${a.id}-forfeit-details`} className="bg-orange-50 border-t-0">
+                                <td colSpan={bulkMode ? 6 : 5} className="px-6 py-4">
+                                  <div className="flex items-start gap-4 bg-white rounded-lg p-4 border border-orange-200">
+                                    <div className="p-2 bg-orange-100 rounded-lg">
+                                      <AlertTriangle className="w-5 h-5 text-orange-600" />
+                                    </div>
+                                    <div className="flex-1 space-y-2">
+                                      <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                          <span className="font-bold text-slate-700">Forfeit Reason:</span>
+                                          <p className="text-orange-700 font-medium">{a.forfeitDetails.reason}</p>
+                                        </div>
+                                        <div>
+                                          <span className="font-bold text-slate-700">Forfeited At:</span>
+                                          <p className="text-slate-600">{new Date(a.forfeitDetails.forfeitedAt).toLocaleString()}</p>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <span className="font-bold text-slate-700 text-sm">Details:</span>
+                                        <p className="text-slate-600 text-sm mt-1">{a.forfeitDetails.details}</p>
+                                      </div>
+                                      {a.forfeitDetails.forfeitCount > 1 && (
+                                        <div className="bg-red-50 border border-red-300 rounded-lg p-3">
+                                          <p className="text-red-800 text-sm font-bold">
+                                            🚨 Warning: This assignment has been forfeited {a.forfeitDetails.forfeitCount} times
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            </>
                         );
                       })
                     )}
@@ -802,6 +1055,85 @@ export const OpsDashboard: React.FC<Props> = ({ onSelectAssignment }) => {
                 <p className="text-xs text-blue-900">
                   <strong>Please wait...</strong> AI is analyzing each assignment and matching with the best advocate based on location, expertise, and workload.
                 </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Re-Allocation Modal */}
+      {showReAllocateModal && selectedReAllocateAssignment && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[70] animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-orange-300 p-6 max-w-md mx-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div className="p-3 rounded-full bg-orange-100">
+                <RefreshCw className="w-6 h-6 text-orange-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-slate-900 mb-2">
+                  Re-Allocate Forfeited Assignment
+                </h3>
+                <p className="text-sm text-slate-600 mb-1">
+                  <strong>Assignment:</strong> {selectedReAllocateAssignment.lan}
+                </p>
+                <p className="text-sm text-slate-600 mb-4">
+                  <strong>Previous Advocate:</strong> {selectedReAllocateAssignment.forfeitDetails?.forfeitedByName}
+                </p>
+
+                {selectedReAllocateAssignment.forfeitDetails && (
+                  <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <p className="text-xs font-bold text-orange-900 mb-1">Forfeit Reason:</p>
+                    <p className="text-xs text-orange-700">{selectedReAllocateAssignment.forfeitDetails.reason}</p>
+                  </div>
+                )}
+
+                <div className="mb-6">
+                  <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wider">
+                    Select New Advocate
+                  </label>
+                  <select
+                    value={reAllocateAdvocate}
+                    onChange={(e) => setReAllocateAdvocate(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  >
+                    <option value="">-- Choose Advocate --</option>
+                    {store.getAdvocates()
+                      .filter(adv => adv.id !== selectedReAllocateAssignment.forfeitDetails?.previousAdvocateId)
+                      .map(adv => {
+                        const workload = store.getAdvocateWorkload(adv.id);
+                        const stateMatch = adv.states?.includes(selectedReAllocateAssignment.state);
+                        const districtMatch = adv.districts?.includes(selectedReAllocateAssignment.district);
+                        return (
+                          <option key={adv.id} value={adv.id}>
+                            {adv.name} ({workload} active) {stateMatch && districtMatch ? '✓ Location Match' : stateMatch ? '~ State Match' : ''}
+                          </option>
+                        );
+                      })}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-2">
+                    ℹ️ Previous advocate is excluded from the list
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowReAllocateModal(false);
+                      setSelectedReAllocateAssignment(null);
+                      setReAllocateAdvocate('');
+                    }}
+                    className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleManualReAllocateConfirm}
+                    disabled={!reAllocateAdvocate}
+                    className="flex-1 px-4 py-2 rounded-lg font-semibold text-white bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all"
+                  >
+                    Re-Allocate
+                  </button>
+                </div>
               </div>
             </div>
           </div>
