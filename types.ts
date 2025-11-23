@@ -107,13 +107,19 @@ export interface AssignmentDocument {
 export interface Assignment {
   id: string;
   lan: string; // Loan Account Number
+
+  // External System Integration (PropDD Portal)
+  fiCode?: string; // FI Code from PropDD Portal (unique identifier for reconciliation)
+  externalSource?: string; // Source system (e.g., "PropDD", "Manual")
+  externalReference?: string; // External reference URL or ID
+
   pan: string;
   borrowerName: string;
   propertyAddress: string;
   state: string;
   district: string;
   pincode: string;
-  
+
   // New fields for allocation logic
   borrowerState?: string;
   borrowerDistrict?: string;
@@ -163,4 +169,35 @@ export interface Assignment {
   forfeitDetails?: ForfeitDetails;
   previousAdvocates?: string[];  // Track all advocates who worked on this
   isForfeitedAssignment?: boolean; // Flag for quick filtering
+}
+
+// Advanced Filters Interface
+export interface AssignmentFilters {
+  // Date Range
+  dateFrom?: string;
+  dateTo?: string;
+  dateMode: 'created' | 'completed';
+
+  // Search
+  searchTerm?: string;
+
+  // Status (multi-select)
+  selectedStatuses: AssignmentStatus[];
+
+  // Location
+  selectedState?: string;
+  selectedDistrict?: string;
+
+  // Product & Hub
+  selectedProduct?: string;
+  selectedHub?: string;
+
+  // Advocate
+  selectedAdvocate?: string;
+
+  // Assignment Type
+  assignmentScope?: 'all' | 'TSR' | 'LOR' | 'PRR';
+
+  // External Source
+  externalSource?: 'all' | 'PropDD' | 'Manual';
 }
